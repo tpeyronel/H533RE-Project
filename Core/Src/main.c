@@ -22,7 +22,6 @@
 #include "gpio.h"
 #include "icache.h"
 
-
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "FreeRTOS.h"
@@ -63,6 +62,16 @@ void MX_FREERTOS_Init(void);
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 
+void blinky_led(void* argument)
+{
+    (void)argument;
+    for (;;) {
+        /* Toggle LED_GREEN */
+        BSP_LED_Toggle(LED_GREEN);
+        vTaskDelay(pdMS_TO_TICKS(200));
+    }
+}
+
 /* USER CODE END 0 */
 
 /**
@@ -99,6 +108,8 @@ int main(void)
     MX_GPIO_Init();
     MX_ICACHE_Init();
     /* USER CODE BEGIN 2 */
+
+    xTaskCreate(blinky_led, "Blinky", configMINIMAL_STACK_SIZE, NULL, tskIDLE_PRIORITY + 1, NULL);
 
     /* USER CODE END 2 */
 
