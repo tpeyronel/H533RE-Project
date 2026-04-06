@@ -63,8 +63,8 @@ struct BlinkyLed {
 COM_InitTypeDef BspCOMInit;
 
 /* USER CODE BEGIN PV */
-struct BlinkyLed blinkyLed1 = { .port = LED1_GPIO_Port, .pin = LED1_Pin, .delayMs = 200 };
-struct BlinkyLed blinkyLed2 = { .port = LED2_GPIO_Port, .pin = LED2_Pin, .delayMs = 300 };
+struct BlinkyLed blinkyLed1 = { .port = LED1_GPIO_Port, .pin = LED1_Pin, .delayMs = 500 };
+struct BlinkyLed blinkyLed2 = { .port = LED2_GPIO_Port, .pin = LED2_Pin, .delayMs = 500 };
 struct BlinkyLed blinkyLed3 = { .port = LED3_GPIO_Port, .pin = LED3_Pin, .delayMs = 500 };
 struct BlinkyLed blinkyLed4 = { .port = LED4_GPIO_Port, .pin = LED4_Pin, .delayMs = 700 };
 
@@ -81,13 +81,25 @@ void MX_FREERTOS_Init(void);
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 
-void vTareaParpadeo(void* argument)
+void vTareaParpadeoRelativo(void* argument)
 {
     struct BlinkyLed* led = (struct BlinkyLed*)(argument);
 
     for (;;) {
-        // vTaskDelay(pdMS_TO_TICKS(led->delayMs));
-        HAL_Delay(led->delayMs);
+        HAL_Delay(100);
+        vTaskDelay(pdMS_TO_TICKS(led->delayMs));
+        HAL_GPIO_TogglePin(led->port, led->pin);
+    }
+}
+
+void vTareaParpadeoAbsoluto(void* argument)
+{
+    struct BlinkyLed* led = (struct BlinkyLed*)(argument);
+    TickType_t xLastWakeTime = xTaskGetTickCount();
+
+    for (;;) {
+        HAL_Delay(100);
+        vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(led->delayMs));
         HAL_GPIO_TogglePin(led->port, led->pin);
     }
 }
@@ -172,8 +184,9 @@ int main(void)
     /* USER CODE BEGIN 2 */
 
     // xTaskCreate(blinky_led, "Blinky", configMINIMAL_STACK_SIZE, NULL, tskIDLE_PRIORITY + 1, NULL);
-    xTaskCreate(vTareaParpadeo, "Blinky1", configMINIMAL_STACK_SIZE, &blinkyLed1, tskIDLE_PRIORITY + 1, NULL);
-    xTaskCreate(vTareaBoton, "ButtonTask", configMINIMAL_STACK_SIZE, NULL, tskIDLE_PRIORITY + 2, NULL);
+    xTaskCreate(vTareaParpadeoRelativo, "BlinkyRel", configMINIMAL_STACK_SIZE, &blinkyLed1, tskIDLE_PRIORITY + 1, NULL);
+    xTaskCreate(vTareaParpadeoAbsoluto, "BlinkyAbs", configMINIMAL_STACK_SIZE, &blinkyLed2, tskIDLE_PRIORITY + 1, NULL);
+    // xTaskCreate(vTareaBoton, "ButtonTask", configMINIMAL_STACK_SIZE, NULL, tskIDLE_PRIORITY + 2, NULL);
     // xTaskCreate(vTareaParpadeo, "Blinky2", configMINIMAL_STACK_SIZE, &blinkyLed2, tskIDLE_PRIORITY + 1, NULL);
     // xTaskCreate(vTareaParpadeo, "Blinky3", configMINIMAL_STACK_SIZE, &blinkyLed3, tskIDLE_PRIORITY + 1, NULL);
     // xTaskCreate(vTareaParpadeo, "Blinky4", configMINIMAL_STACK_SIZE, &blinkyLed4, tskIDLE_PRIORITY + 1, NULL);
