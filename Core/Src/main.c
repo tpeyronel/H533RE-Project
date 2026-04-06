@@ -81,25 +81,33 @@ void MX_FREERTOS_Init(void);
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 
-void vTareaParpadeoRelativo(void* argument)
+void vTareaA(void* argument)
 {
     struct BlinkyLed* led = (struct BlinkyLed*)(argument);
+    TickType_t lastPressTime = 0;
 
     for (;;) {
-        HAL_Delay(100);
-        vTaskDelay(pdMS_TO_TICKS(led->delayMs));
+        HAL_Delay(300);
         HAL_GPIO_TogglePin(led->port, led->pin);
+
+        UBaseType_t priority = uxTaskPriorityGet(NULL);
+        if (priority == tskIDLE_PRIORITY + 1) {
+            if (BSP_PB_GetState(BUTTON_USER) == GPIO_PIN_SET) {
+                vTaskPrioritySet(NULL, tskIDLE_PRIORITY + 2);
+                lastPressTime = xTaskGetTickCount();
+            }
+        } else if ((xTaskGetTickCount() - lastPressTime) > pdMS_TO_TICKS(3000)) {
+            vTaskPrioritySet(NULL, tskIDLE_PRIORITY + 1);
+        }
     }
 }
 
-void vTareaParpadeoAbsoluto(void* argument)
+void vTareaB(void* argument)
 {
     struct BlinkyLed* led = (struct BlinkyLed*)(argument);
-    TickType_t xLastWakeTime = xTaskGetTickCount();
 
     for (;;) {
-        HAL_Delay(100);
-        vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(led->delayMs));
+        HAL_Delay(300);
         HAL_GPIO_TogglePin(led->port, led->pin);
     }
 }
@@ -184,8 +192,8 @@ int main(void)
     /* USER CODE BEGIN 2 */
 
     // xTaskCreate(blinky_led, "Blinky", configMINIMAL_STACK_SIZE, NULL, tskIDLE_PRIORITY + 1, NULL);
-    xTaskCreate(vTareaParpadeoRelativo, "BlinkyRel", configMINIMAL_STACK_SIZE, &blinkyLed1, tskIDLE_PRIORITY + 1, NULL);
-    xTaskCreate(vTareaParpadeoAbsoluto, "BlinkyAbs", configMINIMAL_STACK_SIZE, &blinkyLed2, tskIDLE_PRIORITY + 1, NULL);
+    xTaskCreate(vTareaA, "BlinkyA", configMINIMAL_STACK_SIZE, &blinkyLed1, tskIDLE_PRIORITY + 1, NULL);
+    xTaskCreate(vTareaB, "BlinkyB", configMINIMAL_STACK_SIZE, &blinkyLed2, tskIDLE_PRIORITY + 1, NULL);
     // xTaskCreate(vTareaBoton, "ButtonTask", configMINIMAL_STACK_SIZE, NULL, tskIDLE_PRIORITY + 2, NULL);
     // xTaskCreate(vTareaParpadeo, "Blinky2", configMINIMAL_STACK_SIZE, &blinkyLed2, tskIDLE_PRIORITY + 1, NULL);
     // xTaskCreate(vTareaParpadeo, "Blinky3", configMINIMAL_STACK_SIZE, &blinkyLed3, tskIDLE_PRIORITY + 1, NULL);
