@@ -25,7 +25,9 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "FreeRTOS.h"
+#include "portmacrocommon.h"
 #include "projdefs.h"
+#include "semphr.h"
 #include "stm32h533xx.h"
 #include "stm32h5xx_hal.h"
 #include "stm32h5xx_hal_gpio.h"
@@ -63,6 +65,9 @@ struct BlinkyLed {
 COM_InitTypeDef BspCOMInit;
 
 /* USER CODE BEGIN PV */
+StaticSemaphore_t buttonSemaphoreBuffer;
+SemaphoreHandle_t buttonSemaphore;
+
 struct BlinkyLed blinkyLed1 = { .port = LED1_GPIO_Port, .pin = LED1_Pin, .delayMs = 500 };
 struct BlinkyLed blinkyLed2 = { .port = LED2_GPIO_Port, .pin = LED2_Pin, .delayMs = 500 };
 struct BlinkyLed blinkyLed3 = { .port = LED3_GPIO_Port, .pin = LED3_Pin, .delayMs = 500 };
@@ -81,33 +86,12 @@ void MX_FREERTOS_Init(void);
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 
-void vTareaA(void* argument)
-{
-    struct BlinkyLed* led = (struct BlinkyLed*)(argument);
-    TickType_t lastPressTime = 0;
-
-    for (;;) {
-        HAL_Delay(300);
-        HAL_GPIO_TogglePin(led->port, led->pin);
-
-        UBaseType_t priority = uxTaskPriorityGet(NULL);
-        if (priority == tskIDLE_PRIORITY + 1) {
-            if (BSP_PB_GetState(BUTTON_USER) == GPIO_PIN_SET) {
-                vTaskPrioritySet(NULL, tskIDLE_PRIORITY + 2);
-                lastPressTime = xTaskGetTickCount();
-            }
-        } else if ((xTaskGetTickCount() - lastPressTime) > pdMS_TO_TICKS(3000)) {
-            vTaskPrioritySet(NULL, tskIDLE_PRIORITY + 1);
-        }
-    }
-}
-
-void vTareaB(void* argument)
+void vTareaBlink(void* argument)
 {
     struct BlinkyLed* led = (struct BlinkyLed*)(argument);
 
     for (;;) {
-        HAL_Delay(300);
+        xSemaphoreTake(buttonSemaphore, portMAX_DELAY);
         HAL_GPIO_TogglePin(led->port, led->pin);
     }
 }
@@ -126,32 +110,28 @@ void vTareaBoton(void* argument)
 
 void BSP_PB_Callback(Button_TypeDef Button)
 {
-    // BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-    // if (Button == BUTTON_USER) {
-    //     if (BSP_PB_GetState(BUTTON_USER) == GPIO_PIN_RESET) {
-    //         HAL_GPIO_WritePin(GPIOA, GPIO_PIN_8, GPIO_PIN_RESET);
-    //     } else {
-    //         HAL_GPIO_WritePin(GPIOA, GPIO_PIN_8, GPIO_PIN_SET);
-    //     }
-    //     // printf("Hello world\n");
-    //     // HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_5);
-    //     // vTaskNotifyGiveFromISR(blinkyHandle, &xHigherPriorityTaskWoken);
-    //     // portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
-    // }
+    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+
+    if (Button == BUTTON_USER && BSP_PB_GetState(Button) == GPIO_PIN_SET) {
+        xSemaphoreGiveFromISR(buttonSemaphore, &xHigherPriorityTaskWoken);
+    }
+
+    portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
 }
 
 void HAL_GPIO_EXTI_Rising_Callback(uint16_t GPIO_Pin)
 {
+    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+
     if (GPIO_Pin == GPIO_PIN_13) {
-        HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_SET);
+        xSemaphoreGiveFromISR(buttonSemaphore, &xHigherPriorityTaskWoken);
     }
+
+    portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
 }
 
 void HAL_GPIO_EXTI_Falling_Callback(uint16_t GPIO_Pin)
 {
-    if (GPIO_Pin == GPIO_PIN_13) {
-        HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_RESET);
-    }
 }
 
 /* USER CODE END 0 */
@@ -176,7 +156,7 @@ int main(void)
     HAL_Init();
 
     /* USER CODE BEGIN Init */
-
+    buttonSemaphore = xSemaphoreCreateBinaryStatic(&buttonSemaphoreBuffer);
     /* USER CODE END Init */
 
     /* Configure the system clock */
@@ -192,8 +172,7 @@ int main(void)
     /* USER CODE BEGIN 2 */
 
     // xTaskCreate(blinky_led, "Blinky", configMINIMAL_STACK_SIZE, NULL, tskIDLE_PRIORITY + 1, NULL);
-    xTaskCreate(vTareaA, "BlinkyA", configMINIMAL_STACK_SIZE, &blinkyLed1, tskIDLE_PRIORITY + 1, NULL);
-    xTaskCreate(vTareaB, "BlinkyB", configMINIMAL_STACK_SIZE, &blinkyLed2, tskIDLE_PRIORITY + 1, NULL);
+    xTaskCreate(vTareaBlink, "Blinky", configMINIMAL_STACK_SIZE, &blinkyLed1, tskIDLE_PRIORITY + 1, NULL);
     // xTaskCreate(vTareaBoton, "ButtonTask", configMINIMAL_STACK_SIZE, NULL, tskIDLE_PRIORITY + 2, NULL);
     // xTaskCreate(vTareaParpadeo, "Blinky2", configMINIMAL_STACK_SIZE, &blinkyLed2, tskIDLE_PRIORITY + 1, NULL);
     // xTaskCreate(vTareaParpadeo, "Blinky3", configMINIMAL_STACK_SIZE, &blinkyLed3, tskIDLE_PRIORITY + 1, NULL);
