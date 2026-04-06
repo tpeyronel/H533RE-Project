@@ -49,7 +49,7 @@ struct BlinkyLed {
 /* USER CODE BEGIN PD */
 // Queremos que el tiempo de respuesta del LED2 no supere los 10 ms. Le restamos un tick que es el tiempo
 // que puede tardar la tarea en despertarse después de que el botón se suelte.
-// Ignoramos el tiempo para escribir el pin.
+// Ignoramos el tiempo para escribir el pin. Se le podría restar un par de ticks para asegurarnos de que esto no influye en el tiempo de respuesta.
 #define POLLING_DELAY_TICKS (pdMS_TO_TICKS(10) - 1)
 /* USER CODE END PD */
 
@@ -106,18 +106,18 @@ void vTareaBoton(void* argument)
 
 void BSP_PB_Callback(Button_TypeDef Button)
 {
-    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-    if (Button == BUTTON_USER) {
-        if (BSP_PB_GetState(BUTTON_USER) == GPIO_PIN_RESET) {
-            HAL_GPIO_WritePin(GPIOA, GPIO_PIN_8, GPIO_PIN_RESET);
-        } else {
-            HAL_GPIO_WritePin(GPIOA, GPIO_PIN_8, GPIO_PIN_SET);
-        }
-        // printf("Hello world\n");
-        // HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_5);
-        // vTaskNotifyGiveFromISR(blinkyHandle, &xHigherPriorityTaskWoken);
-        // portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
-    }
+    // BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+    // if (Button == BUTTON_USER) {
+    //     if (BSP_PB_GetState(BUTTON_USER) == GPIO_PIN_RESET) {
+    //         HAL_GPIO_WritePin(GPIOA, GPIO_PIN_8, GPIO_PIN_RESET);
+    //     } else {
+    //         HAL_GPIO_WritePin(GPIOA, GPIO_PIN_8, GPIO_PIN_SET);
+    //     }
+    //     // printf("Hello world\n");
+    //     // HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_5);
+    //     // vTaskNotifyGiveFromISR(blinkyHandle, &xHigherPriorityTaskWoken);
+    //     // portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+    // }
 }
 
 void HAL_GPIO_EXTI_Rising_Callback(uint16_t GPIO_Pin)
