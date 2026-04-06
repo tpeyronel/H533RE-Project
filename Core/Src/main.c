@@ -25,6 +25,7 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "FreeRTOS.h"
+#include "projdefs.h"
 #include "stm32h533xx.h"
 #include "stm32h5xx_hal.h"
 #include "stm32h5xx_hal_gpio.h"
@@ -39,7 +40,7 @@
 struct BlinkyLed {
     GPIO_TypeDef* port;
     uint16_t pin;
-    uint32_t delay;
+    uint32_t delayMs;
 };
 
 /* USER CODE END PTD */
@@ -59,10 +60,10 @@ struct BlinkyLed {
 COM_InitTypeDef BspCOMInit;
 
 /* USER CODE BEGIN PV */
-struct BlinkyLed blinkyLed1 = { .port = LED1_GPIO_Port, .pin = LED1_Pin, .delay = 200 };
-struct BlinkyLed blinkyLed2 = { .port = LED2_GPIO_Port, .pin = LED2_Pin, .delay = 300 };
-struct BlinkyLed blinkyLed3 = { .port = LED3_GPIO_Port, .pin = LED3_Pin, .delay = 500 };
-struct BlinkyLed blinkyLed4 = { .port = LED4_GPIO_Port, .pin = LED4_Pin, .delay = 700 };
+struct BlinkyLed blinkyLed1 = { .port = LED1_GPIO_Port, .pin = LED1_Pin, .delayMs = 200 };
+struct BlinkyLed blinkyLed2 = { .port = LED2_GPIO_Port, .pin = LED2_Pin, .delayMs = 300 };
+struct BlinkyLed blinkyLed3 = { .port = LED3_GPIO_Port, .pin = LED3_Pin, .delayMs = 500 };
+struct BlinkyLed blinkyLed4 = { .port = LED4_GPIO_Port, .pin = LED4_Pin, .delayMs = 700 };
 
 /* USER CODE END PV */
 
@@ -77,13 +78,13 @@ void MX_FREERTOS_Init(void);
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 
-void blinky_led(void* argument)
+void vTareaParpadeo(void* argument)
 {
     struct BlinkyLed* led = (struct BlinkyLed*)(argument);
 
     for (;;) {
+        vTaskDelay(pdMS_TO_TICKS(led->delayMs));
         HAL_GPIO_TogglePin(led->port, led->pin);
-        HAL_Delay(led->delay);
     }
 }
 
@@ -155,10 +156,10 @@ int main(void)
     /* USER CODE BEGIN 2 */
 
     // xTaskCreate(blinky_led, "Blinky", configMINIMAL_STACK_SIZE, NULL, tskIDLE_PRIORITY + 1, NULL);
-    xTaskCreate(blinky_led, "Blinky1", configMINIMAL_STACK_SIZE, &blinkyLed1, tskIDLE_PRIORITY + 1, NULL);
-    xTaskCreate(blinky_led, "Blinky2", configMINIMAL_STACK_SIZE, &blinkyLed2, tskIDLE_PRIORITY + 1, NULL);
-    xTaskCreate(blinky_led, "Blinky3", configMINIMAL_STACK_SIZE, &blinkyLed3, tskIDLE_PRIORITY + 1, NULL);
-    xTaskCreate(blinky_led, "Blinky4", configMINIMAL_STACK_SIZE, &blinkyLed4, tskIDLE_PRIORITY + 1, NULL);
+    xTaskCreate(vTareaParpadeo, "Blinky1", configMINIMAL_STACK_SIZE, &blinkyLed1, tskIDLE_PRIORITY + 1, NULL);
+    xTaskCreate(vTareaParpadeo, "Blinky2", configMINIMAL_STACK_SIZE, &blinkyLed2, tskIDLE_PRIORITY + 1, NULL);
+    xTaskCreate(vTareaParpadeo, "Blinky3", configMINIMAL_STACK_SIZE, &blinkyLed3, tskIDLE_PRIORITY + 1, NULL);
+    xTaskCreate(vTareaParpadeo, "Blinky4", configMINIMAL_STACK_SIZE, &blinkyLed4, tskIDLE_PRIORITY + 1, NULL);
     /* USER CODE END 2 */
 
     /* Init scheduler */
