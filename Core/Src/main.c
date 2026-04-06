@@ -25,11 +25,22 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "FreeRTOS.h"
+#include "stm32h533xx.h"
+#include "stm32h5xx_hal.h"
+#include "stm32h5xx_hal_gpio.h"
+#include "stm32h5xx_nucleo.h"
 #include "task.h"
+#include <stdio.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
+
+struct BlinkyLed {
+    GPIO_TypeDef* port;
+    uint16_t pin;
+    uint32_t delay;
+};
 
 /* USER CODE END PTD */
 
@@ -48,6 +59,10 @@
 COM_InitTypeDef BspCOMInit;
 
 /* USER CODE BEGIN PV */
+struct BlinkyLed blinkyLed1 = { .port = LED1_GPIO_Port, .pin = LED1_Pin, .delay = 200 };
+struct BlinkyLed blinkyLed2 = { .port = LED2_GPIO_Port, .pin = LED2_Pin, .delay = 300 };
+struct BlinkyLed blinkyLed3 = { .port = LED3_GPIO_Port, .pin = LED3_Pin, .delay = 500 };
+struct BlinkyLed blinkyLed4 = { .port = LED4_GPIO_Port, .pin = LED4_Pin, .delay = 700 };
 
 /* USER CODE END PV */
 
@@ -64,11 +79,41 @@ void MX_FREERTOS_Init(void);
 
 void blinky_led(void* argument)
 {
-    (void)argument;
+    struct BlinkyLed* led = (struct BlinkyLed*)(argument);
+
     for (;;) {
-        /* Toggle LED_GREEN */
-        BSP_LED_Toggle(LED_GREEN);
-        vTaskDelay(pdMS_TO_TICKS(200));
+        HAL_GPIO_TogglePin(led->port, led->pin);
+        HAL_Delay(led->delay);
+    }
+}
+
+void BSP_PB_Callback(Button_TypeDef Button)
+{
+    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+    if (Button == BUTTON_USER) {
+        if (BSP_PB_GetState(BUTTON_USER) == GPIO_PIN_RESET) {
+            HAL_GPIO_WritePin(GPIOA, GPIO_PIN_8, GPIO_PIN_RESET);
+        } else {
+            HAL_GPIO_WritePin(GPIOA, GPIO_PIN_8, GPIO_PIN_SET);
+        }
+        // printf("Hello world\n");
+        // HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_5);
+        // vTaskNotifyGiveFromISR(blinkyHandle, &xHigherPriorityTaskWoken);
+        // portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+    }
+}
+
+void HAL_GPIO_EXTI_Rising_Callback(uint16_t GPIO_Pin)
+{
+    if (GPIO_Pin == GPIO_PIN_13) {
+        HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_SET);
+    }
+}
+
+void HAL_GPIO_EXTI_Falling_Callback(uint16_t GPIO_Pin)
+{
+    if (GPIO_Pin == GPIO_PIN_13) {
+        HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_RESET);
     }
 }
 
@@ -109,8 +154,11 @@ int main(void)
     MX_ICACHE_Init();
     /* USER CODE BEGIN 2 */
 
-    xTaskCreate(blinky_led, "Blinky", configMINIMAL_STACK_SIZE, NULL, tskIDLE_PRIORITY + 1, NULL);
-
+    // xTaskCreate(blinky_led, "Blinky", configMINIMAL_STACK_SIZE, NULL, tskIDLE_PRIORITY + 1, NULL);
+    xTaskCreate(blinky_led, "Blinky1", configMINIMAL_STACK_SIZE, &blinkyLed1, tskIDLE_PRIORITY + 1, NULL);
+    xTaskCreate(blinky_led, "Blinky2", configMINIMAL_STACK_SIZE, &blinkyLed2, tskIDLE_PRIORITY + 1, NULL);
+    xTaskCreate(blinky_led, "Blinky3", configMINIMAL_STACK_SIZE, &blinkyLed3, tskIDLE_PRIORITY + 1, NULL);
+    xTaskCreate(blinky_led, "Blinky4", configMINIMAL_STACK_SIZE, &blinkyLed4, tskIDLE_PRIORITY + 1, NULL);
     /* USER CODE END 2 */
 
     /* Init scheduler */
