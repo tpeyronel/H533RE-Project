@@ -24,6 +24,8 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include "FreeRTOS.h"
+#include "task.h"
 #include "mymain.h"
 /* USER CODE END Includes */
 
@@ -100,11 +102,6 @@ int main(void)
   mymain();
   /* USER CODE END 2 */
 
-  /* Init scheduler */
-  osKernelInitialize();
-  /* Call init function for freertos objects (in app_freertos.c) */
-  MX_FREERTOS_Init();
-
   /* Initialize leds */
   BSP_LED_Init(LED_GREEN);
 
@@ -123,7 +120,7 @@ int main(void)
   }
 
   /* Start scheduler */
-  osKernelStart();
+  vTaskStartScheduler();
 
   /* We should never get here as control is now taken by the scheduler */
 
