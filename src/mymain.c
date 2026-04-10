@@ -75,6 +75,9 @@ void HAL_GPIO_EXTI_Rising_Callback(uint16_t GPIO_Pin)
 
 void HAL_GPIO_EXTI_Falling_Callback(uint16_t GPIO_Pin)
 {
+    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+
+    portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
 }
 
 void mymain()
