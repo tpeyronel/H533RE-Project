@@ -1,0 +1,25 @@
+#pragma once
+
+#include <stddef.h>
+
+enum MessageType : uint8_t {
+    MSG_TYPE_SET_SPEED = 0,
+    MSG_TYPE_TOGGLE_TC = 1,
+} __attribute__((packed));
+
+struct MessageSetSpeed {
+    enum MessageType type;
+    uint8_t speed;
+} __attribute__((packed));
+
+struct MessageToggleTc {
+    enum MessageType type;
+} __attribute__((packed));
+
+union Message {
+    enum MessageType type;
+    struct MessageSetSpeed set_speed;
+    struct MessageToggleTc toggle_tc;
+} __attribute__((packed));
+
+#define MESSAGE_SIZE sizeof(struct Message)
