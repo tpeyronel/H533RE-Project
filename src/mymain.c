@@ -4,6 +4,7 @@
 #include "semphr.h"
 #include "stm32h5xx_hal.h"
 #include "task.h"
+#include "tim.h"
 
 struct BlinkyLed {
     GPIO_TypeDef* port;
@@ -70,6 +71,10 @@ void HAL_GPIO_EXTI_Falling_Callback(uint16_t GPIO_Pin)
 
 void mymain()
 {
+    HAL_TIM_Encoder_Start(&htim1, TIM_CHANNEL_ALL);
+    HAL_TIM_Encoder_Start(&htim3, TIM_CHANNEL_ALL);
+    HAL_TIM_Encoder_Start(&htim4, TIM_CHANNEL_ALL);
+
     buttonSemaphore = xSemaphoreCreateBinaryStatic(&buttonSemaphoreBuffer);
     xTaskCreate(vTareaBlink, "Blinky", configMINIMAL_STACK_SIZE, &blinkyLed1, tskIDLE_PRIORITY + 1, &blinkTask);
     xTaskCreate(vTareaBoton, "ButtonTask", configMINIMAL_STACK_SIZE, NULL, tskIDLE_PRIORITY + 2, NULL);
