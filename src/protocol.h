@@ -16,10 +16,10 @@ struct MessageToggleTc {
     enum MessageType type;
 } __attribute__((packed));
 
-union Message {
+typedef union {
     enum MessageType type;
     struct MessageSetSpeed set_speed;
     struct MessageToggleTc toggle_tc;
-} __attribute__((packed));
+} __attribute__((packed)) Message_t;
 
-#define MESSAGE_SIZE sizeof(struct Message)
+#define MESSAGE_SIZE sizeof(Message_t)

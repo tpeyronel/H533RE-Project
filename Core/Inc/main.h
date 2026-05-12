@@ -63,6 +63,10 @@ void Error_Handler(void);
 #define USER_BUTTON_Pin GPIO_PIN_13
 #define USER_BUTTON_GPIO_Port GPIOC
 #define USER_BUTTON_EXTI_IRQn EXTI13_IRQn
+#define BLUETOOTH_TX_Pin GPIO_PIN_0
+#define BLUETOOTH_TX_GPIO_Port GPIOA
+#define BLUETOOTH_RX_Pin GPIO_PIN_1
+#define BLUETOOTH_RX_GPIO_Port GPIOA
 #define ENC_B_CH1_Pin GPIO_PIN_6
 #define ENC_B_CH1_GPIO_Port GPIOA
 #define ENC_B_CH2_Pin GPIO_PIN_7
