@@ -239,12 +239,18 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
   /* USER CODE BEGIN Callback 0 */
 
+  BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+
   /* USER CODE END Callback 0 */
   if (htim->Instance == TIM6)
   {
     HAL_IncTick();
   }
   /* USER CODE BEGIN Callback 1 */
+
+  hal_tim_period_elapsed_callback(htim, &xHigherPriorityTaskWoken);
+
+  portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
 
   /* USER CODE END Callback 1 */
 }

@@ -1,5 +1,7 @@
+#include "mymain.h"
 #include "FreeRTOS.h"
 #include "main.h"
+#include "portmacrocommon.h"
 #include "projdefs.h"
 #include "semphr.h"
 #include "stm32h5xx_hal.h"
@@ -22,7 +24,8 @@
 #define MOTOR_KP 1.0f
 #define MOTOR_KI 0.5f
 #define MOTOR_KD 0.1f
-#define MOTOR_DRIVER_UPDATE_INTERVAL 0.001f // 1 ms
+#define MOTOR_DRIVER_UPDATE_INTERVAL 0.005f // 5 ms
+#define MOTOR_DRIVER_UPDATE_FREQUENCY 200.0f // 200 Hz
 
 typedef struct {
     // Controller gains
@@ -206,12 +209,10 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef* huart, uint16_t size)
     portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
 }
 
-void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef* htim)
+void hal_tim_period_elapsed_callback(TIM_HandleTypeDef* htim, BaseType_t* xHigherPriorityTaskWoken)
 {
-    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-
     if (htim->Instance == TIM_TRACTION_CONTROL.Instance) {
-        xSemaphoreGiveFromISR(motorDriverSem, &xHigherPriorityTaskWoken);
+        xSemaphoreGiveFromISR(motorDriverSem, xHigherPriorityTaskWoken);
     }
 }
 
@@ -229,5 +230,5 @@ void mymain()
     motorDriverSem = xSemaphoreCreateBinaryStatic(&motorDriverSemBuffer);
     xSemaphoreGive(motorDriverSem);
     xTaskCreate(task_message_processing, "MessageProcessing", configMINIMAL_STACK_SIZE, NULL, tskIDLE_PRIORITY + 1, NULL);
-    xTaskCreate(task_motor_driver, "MotorDriver", configMINIMAL_STACK_SIZE, NULL, tskIDLE_PRIORITY + 2, NULL);
+    xTaskCreate(task_motor_driver, "MotorDriver", configMINIMAL_STACK_SIZE * 8, NULL, tskIDLE_PRIORITY + 2, NULL);
 }
