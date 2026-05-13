@@ -35,9 +35,8 @@ volatile SystemState_t systemState = {
     .tc_enabled = false,
 };
 
-StaticSemaphore_t buttonSemaphoreBuffer;
-SemaphoreHandle_t buttonSemaphore;
-TaskHandle_t blinkTask;
+StaticSemaphore_t motorDriverSemBuffer;
+SemaphoreHandle_t motorDriverSem;
 
 volatile Message_t messageQueueStorageBuffer[MESSAGE_QUEUE_SIZE];
 StaticQueue_t messageQueueBuffer;
@@ -77,35 +76,15 @@ void task_message_processing(void* argument)
     }
 }
 
-void vTareaBoton(void* argument)
-{
-    for (;;) {
-/*
- * ISRs
- */
-
-void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef* huart, uint16_t size)
-{
-    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-
-    if (huart->Instance == UART4) {
-        for (uint16_t offset = 0; offset < size; offset += sizeof(Message_t)) {
-            xQueueSendFromISR(messageQueue, (uint8_t*)(rxBuffer) + offset, &xHigherPriorityTaskWoken);
-        }
-
-        HAL_UARTEx_ReceiveToIdle_IT(huart, (uint8_t*)(rxBuffer), RX_BUFFER_SIZE);
-    }
-
-    portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
-}
-
-void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef* htim)
+void task_motor_driver(void* argument)
 {
     static uint16_t last_count_front_right = 0;
     static uint16_t last_count_rear_left = 0;
     static uint16_t last_count_rear_right = 0;
 
-    if (htim->Instance == TIM_TRACTION_CONTROL.Instance) {
+    for (;;) {
+        xSemaphoreTake(motorDriverSem, portMAX_DELAY);
+
         uint16_t current_count_front_right = __HAL_TIM_GET_COUNTER(&TIM_FRONT_RIGHT);
         uint16_t current_count_rear_left = __HAL_TIM_GET_COUNTER(&TIM_REAR_LEFT);
         uint16_t current_count_rear_right = __HAL_TIM_GET_COUNTER(&TIM_REAR_RIGHT);
@@ -131,6 +110,34 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef* htim)
     }
 }
 
+/*
+ * ISRs
+ */
+
+void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef* huart, uint16_t size)
+{
+    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+
+    if (huart->Instance == UART4) {
+        for (uint16_t offset = 0; offset < size; offset += sizeof(Message_t)) {
+            xQueueSendFromISR(messageQueue, (uint8_t*)(rxBuffer) + offset, &xHigherPriorityTaskWoken);
+        }
+
+        HAL_UARTEx_ReceiveToIdle_IT(huart, (uint8_t*)(rxBuffer), RX_BUFFER_SIZE);
+    }
+
+    portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+}
+
+void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef* htim)
+{
+    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+
+    if (htim->Instance == TIM_TRACTION_CONTROL.Instance) {
+        xSemaphoreGiveFromISR(motorDriverSem, &xHigherPriorityTaskWoken);
+    }
+}
+
 void mymain()
 {
     messageQueue = xQueueCreateStatic(MESSAGE_QUEUE_SIZE, sizeof(Message_t), (uint8_t*)(messageQueueStorageBuffer), &messageQueueBuffer);
@@ -142,11 +149,8 @@ void mymain()
 
     HAL_UARTEx_ReceiveToIdle_IT(&huart4, (uint8_t*)(rxBuffer), RX_BUFFER_SIZE);
 
-    buttonSemaphore = xSemaphoreCreateBinaryStatic(&buttonSemaphoreBuffer);
+    motorDriverSem = xSemaphoreCreateBinaryStatic(&motorDriverSemBuffer);
+    xSemaphoreGive(motorDriverSem);
     xTaskCreate(task_message_processing, "MessageProcessing", configMINIMAL_STACK_SIZE, NULL, tskIDLE_PRIORITY + 1, NULL);
-    // xTaskCreate(blinky_led, "Blinky", configMINIMAL_STACK_SIZE, NULL, tskIDLE_PRIORITY + 1, NULL);
-    // xTaskCreate(vTareaBoton, "ButtonTask", configMINIMAL_STACK_SIZE, NULL, tskIDLE_PRIORITY + 2, NULL);
-    // xTaskCreate(vTareaParpadeo, "Blinky2", configMINIMAL_STACK_SIZE, &blinkyLed2, tskIDLE_PRIORITY + 1, NULL);
-    // xTaskCreate(vTareaParpadeo, "Blinky3", configMINIMAL_STACK_SIZE, &blinkyLed3, tskIDLE_PRIORITY + 1, NULL);
-    // xTaskCreate(vTareaParpadeo, "Blinky4", configMINIMAL_STACK_SIZE, &blinkyLed4, tskIDLE_PRIORITY + 1, NULL);
+    xTaskCreate(task_motor_driver, "MotorDriver", configMINIMAL_STACK_SIZE, NULL, tskIDLE_PRIORITY + 2, NULL);
 }
