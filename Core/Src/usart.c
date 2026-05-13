@@ -95,14 +95,14 @@ void HAL_UART_MspInit(UART_HandleTypeDef* uartHandle)
 
     __HAL_RCC_GPIOA_CLK_ENABLE();
     /**UART4 GPIO Configuration
-    PA0     ------> UART4_TX
-    PA1     ------> UART4_RX
+    PA11     ------> UART4_RX
+    PA12     ------> UART4_TX
     */
-    GPIO_InitStruct.Pin = BLUETOOTH_TX_Pin|BLUETOOTH_RX_Pin;
+    GPIO_InitStruct.Pin = BLUETOOTH_RX_Pin|BLUETOOTH_TX_Pin;
     GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
     GPIO_InitStruct.Pull = GPIO_NOPULL;
     GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-    GPIO_InitStruct.Alternate = GPIO_AF8_UART4;
+    GPIO_InitStruct.Alternate = GPIO_AF6_UART4;
     HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
     /* UART4 interrupt Init */
@@ -126,10 +126,10 @@ void HAL_UART_MspDeInit(UART_HandleTypeDef* uartHandle)
     __HAL_RCC_UART4_CLK_DISABLE();
 
     /**UART4 GPIO Configuration
-    PA0     ------> UART4_TX
-    PA1     ------> UART4_RX
+    PA11     ------> UART4_RX
+    PA12     ------> UART4_TX
     */
-    HAL_GPIO_DeInit(GPIOA, BLUETOOTH_TX_Pin|BLUETOOTH_RX_Pin);
+    HAL_GPIO_DeInit(GPIOA, BLUETOOTH_RX_Pin|BLUETOOTH_TX_Pin);
 
     /* UART4 interrupt Deinit */
     HAL_NVIC_DisableIRQ(UART4_IRQn);

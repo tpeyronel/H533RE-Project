@@ -5,6 +5,7 @@
 #include "projdefs.h"
 #include "semphr.h"
 #include "stm32h5xx_hal.h"
+#include "stm32h5xx_hal_tim.h"
 #include "task.h"
 #include "tim.h"
 #include "usart.h"
@@ -16,6 +17,7 @@
 #define MESSAGE_QUEUE_SIZE 8
 #define ENCODER_PPR 200
 
+#define TIM_PWM htim2
 #define TIM_TRACTION_CONTROL htim7
 #define TIM_FRONT_RIGHT htim1
 #define TIM_REAR_LEFT htim3
@@ -26,6 +28,7 @@
 #define MOTOR_KD 0.1f
 #define MOTOR_DRIVER_UPDATE_INTERVAL 0.005f // 5 ms
 #define MOTOR_DRIVER_UPDATE_FREQUENCY 200.0f // 200 Hz
+#define MOTOR_MAX_PWM_VALUE 1000 // Assuming timer is configured for 1000 steps (0-100% duty cycle)
 
 typedef struct {
     // Controller gains
@@ -141,6 +144,21 @@ void process_message(Message_t* msg)
     }
 }
 
+void set_motor_pwm(float pwm, uint8_t motor_id)
+{
+    uint32_t channel = -1;
+    switch (motor_id) {
+    case 0:
+        channel = TIM_CHANNEL_1; // Front right
+        break;
+    case 1:
+        channel = TIM_CHANNEL_2; // Rear left
+        break;
+    }
+
+    __HAL_TIM_SET_COMPARE(&TIM_PWM, channel, (uint32_t)(pwm * MOTOR_MAX_PWM_VALUE));
+}
+
 /*
  * Tasks
  */
@@ -182,6 +200,15 @@ void task_motor_driver(void* argument)
             float slip_rear_right = (float)(delta_pulses_front_right - delta_pulses_rear_right) / (float)(delta_pulses_front_right);
         }
 
+        float rps_rear_left = (delta_pulses_rear_left / (float)ENCODER_PPR) * MOTOR_DRIVER_UPDATE_FREQUENCY;
+
+        float throttle = (float)(systemState.throttle) / 255.0f; // Normalize throttle to [0, 1]
+        float setpoint = 1000.0f / 60.0f + (7000.0f / 60.0f) * throttle; // Example: 1000 RPM at 0% throttle, 8000 RPM at 100% throttle
+
+        float pwm = pid_update(&motorPidConfig, &rearLeftPidState, setpoint, rps_rear_left);
+
+        set_motor_pwm(pwm, 0);
+
         // uint16_t target_delta_pulses_rear_left =
 
         // float rps_front_right = (delta_pulses_front_right / (float)ENCODER_PPR) * (1000.0f / 5.0f);
@@ -220,10 +247,11 @@ void mymain()
 {
     messageQueue = xQueueCreateStatic(MESSAGE_QUEUE_SIZE, sizeof(Message_t), (uint8_t*)(messageQueueStorageBuffer), &messageQueueBuffer);
 
-    HAL_TIM_Encoder_Start(&htim1, TIM_CHANNEL_ALL);
-    HAL_TIM_Encoder_Start(&htim3, TIM_CHANNEL_ALL);
-    HAL_TIM_Encoder_Start(&htim4, TIM_CHANNEL_ALL);
-    HAL_TIM_Base_Start_IT(&htim7);
+    HAL_TIM_PWM_Start(&TIM_PWM, TIM_CHANNEL_1 | TIM_CHANNEL_2);
+    HAL_TIM_Encoder_Start(&TIM_FRONT_RIGHT, TIM_CHANNEL_ALL);
+    HAL_TIM_Encoder_Start(&TIM_REAR_LEFT, TIM_CHANNEL_ALL);
+    HAL_TIM_Encoder_Start(&TIM_REAR_RIGHT, TIM_CHANNEL_ALL);
+    HAL_TIM_Base_Start_IT(&TIM_TRACTION_CONTROL);
 
     HAL_UARTEx_ReceiveToIdle_IT(&huart4, (uint8_t*)(rxBuffer), RX_BUFFER_SIZE);
 
