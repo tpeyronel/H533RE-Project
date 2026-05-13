@@ -78,7 +78,7 @@ PidControllerState_t rearRightPidState = {
 
 volatile SystemState_t systemState = {
     .throttle = 0,
-    .tc_enabled = false,
+    .tc_enabled = true,
 };
 
 StaticSemaphore_t motorDriverSemBuffer;
