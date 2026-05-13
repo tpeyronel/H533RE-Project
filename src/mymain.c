@@ -19,16 +19,56 @@
 #define TIM_REAR_LEFT htim3
 #define TIM_REAR_RIGHT htim4
 
-struct BlinkyLed {
-    GPIO_TypeDef* port;
-    uint16_t pin;
-    uint32_t delayMs;
-};
+#define MOTOR_KP 1.0f
+#define MOTOR_KI 0.5f
+#define MOTOR_KD 0.1f
+#define MOTOR_DRIVER_UPDATE_INTERVAL 0.001f // 1 ms
+
+typedef struct {
+    // Controller gains
+    float Kp;
+    float Ki;
+    float Kd;
+
+    // Output limits (Anti-windup)
+    float outMin;
+    float outMax;
+
+    // Sample time (in seconds)
+    float T;
+} PidControllerConfig_t;
+
+typedef struct {
+    float integrator;
+    float prevError;
+    float prevMeasurement; // For derivative on measurement
+} PidControllerState_t;
 
 typedef struct {
     uint8_t speed;
     bool tc_enabled;
 } SystemState_t;
+
+PidControllerConfig_t motorPidConfig = {
+    .Kp = MOTOR_KP,
+    .Ki = MOTOR_KI,
+    .Kd = MOTOR_KD,
+    .outMin = 0.0f,
+    .outMax = 1.0f,
+    .T = MOTOR_DRIVER_UPDATE_INTERVAL,
+};
+
+PidControllerState_t rearLeftPidState = {
+    .integrator = 0.0f,
+    .prevError = 0.0f,
+    .prevMeasurement = 0.0f,
+};
+
+PidControllerState_t rearRightPidState = {
+    .integrator = 0.0f,
+    .prevError = 0.0f,
+    .prevMeasurement = 0.0f,
+};
 
 volatile SystemState_t systemState = {
     .speed = 0,
@@ -43,6 +83,43 @@ StaticQueue_t messageQueueBuffer;
 QueueHandle_t messageQueue;
 
 volatile uint8_t rxBuffer[RX_BUFFER_SIZE];
+
+float pid_update(PidControllerConfig_t* pidc, PidControllerState_t* pids, float setpoint, float measurement)
+{
+    // 1. Calculate error
+    float error = setpoint - measurement;
+
+    // 2. Proportional term
+    float proportional = pidc->Kp * error;
+
+    // 3. Integral term (Discrete integration)
+    pids->integrator += 0.5f * pidc->Ki * pidc->T * (error + pids->prevError);
+
+    // Anti-windup: Clamp the integrator to prevent "runaway"
+    if (pids->integrator > pidc->outMax)
+        pids->integrator = pidc->outMax;
+    else if (pids->integrator < pidc->outMin)
+        pids->integrator = pidc->outMin;
+
+    // 4. Derivative term (Band-limited differentiation)
+    // Using measurement instead of error avoids "derivative kick" on setpoint changes
+    float derivative = -pidc->Kd * (measurement - pids->prevMeasurement) / pidc->T;
+
+    // 5. Total Output
+    float output = proportional + pids->integrator + derivative;
+
+    // Final output clamping
+    if (output > pidc->outMax)
+        output = pidc->outMax;
+    else if (output < pidc->outMin)
+        output = pidc->outMin;
+
+    // Store state for next iteration
+    pids->prevError = error;
+    pids->prevMeasurement = measurement;
+
+    return output;
+}
 
 void process_message(Message_t* msg)
 {
