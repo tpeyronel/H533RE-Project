@@ -3,13 +3,13 @@
 #include <stddef.h>
 
 enum MessageType : uint8_t {
-    MSG_TYPE_SET_SPEED = 0,
+    MSG_TYPE_SET_THROTTLE = 0,
     MSG_TYPE_TOGGLE_TC = 1,
 } __attribute__((packed));
 
-struct MessageSetSpeed {
+struct MessageSetThrottle {
     enum MessageType type;
-    uint8_t speed;
+    uint8_t throttle;
 } __attribute__((packed));
 
 struct MessageToggleTc {
@@ -18,7 +18,7 @@ struct MessageToggleTc {
 
 typedef union {
     enum MessageType type;
-    struct MessageSetSpeed set_speed;
+    struct MessageSetThrottle set_throttle;
     struct MessageToggleTc toggle_tc;
 } __attribute__((packed)) Message_t;
 

@@ -45,7 +45,7 @@ typedef struct {
 } PidControllerState_t;
 
 typedef struct {
-    uint8_t speed;
+    uint8_t throttle;
     bool tc_enabled;
 } SystemState_t;
 
@@ -71,7 +71,7 @@ PidControllerState_t rearRightPidState = {
 };
 
 volatile SystemState_t systemState = {
-    .speed = 0,
+    .throttle = 0,
     .tc_enabled = false,
 };
 
@@ -124,9 +124,9 @@ float pid_update(PidControllerConfig_t* pidc, PidControllerState_t* pids, float 
 void process_message(Message_t* msg)
 {
     switch (msg->type) {
-    case MSG_TYPE_SET_SPEED:
-        printf("RX: Set speed to %u\n", msg->set_speed.speed);
-        systemState.speed = msg->set_speed.speed;
+    case MSG_TYPE_SET_THROTTLE:
+        printf("RX: Set throttle to %u\n", msg->set_throttle.throttle);
+        systemState.throttle = msg->set_throttle.throttle;
         break;
     case MSG_TYPE_TOGGLE_TC:
         printf("RX: Toggle TC\n");
