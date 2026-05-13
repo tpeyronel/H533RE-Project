@@ -30,6 +30,8 @@
 #define MOTOR_DRIVER_UPDATE_FREQUENCY 200.0f // 200 Hz
 #define MOTOR_MAX_PWM_VALUE 1000 // Assuming timer is configured for 1000 steps (0-100% duty cycle)
 
+#define TARGET_SLIP_RATIO 0.05f // Example target slip ratio (5%)
+
 typedef struct {
     // Controller gains
     float Kp;
@@ -156,6 +158,11 @@ void set_motor_pwm(float pwm, uint8_t motor_id)
         break;
     }
 
+    if (pwm < 0.0f)
+        pwm = 0.0f;
+    else if (pwm > 1.0f)
+        pwm = 1.0f;
+
     __HAL_TIM_SET_COMPARE(&TIM_PWM, channel, (uint32_t)(pwm * MOTOR_MAX_PWM_VALUE));
 }
 
@@ -196,8 +203,14 @@ void task_motor_driver(void* argument)
         last_count_rear_right = current_count_rear_right;
 
         if (delta_pulses_front_right > 0) {
-            float slip_rear_left = (float)(delta_pulses_front_right - delta_pulses_rear_left) / (float)(delta_pulses_front_right);
-            float slip_rear_right = (float)(delta_pulses_front_right - delta_pulses_rear_right) / (float)(delta_pulses_front_right);
+            float slip_ratio_rear_left = 1.0f - (float)(delta_pulses_rear_left) / (float)(delta_pulses_front_right);
+            float slip_ratio_rear_right = 1.0f - (float)(delta_pulses_rear_right) / (float)(delta_pulses_front_right);
+
+            float rear_left_pwm = pid_update(&motorPidConfig, &rearLeftPidState, TARGET_SLIP_RATIO, slip_ratio_rear_left); // Assuming target slip is 0
+            float rear_right_pwm = pid_update(&motorPidConfig, &rearRightPidState, TARGET_SLIP_RATIO, slip_ratio_rear_right); // Assuming target slip is 0
+        } else {
+            set_motor_pwm(1.0f, 0);
+            set_motor_pwm(1.0f, 1);
         }
 
         float rps_rear_left = (delta_pulses_rear_left / (float)ENCODER_PPR) * MOTOR_DRIVER_UPDATE_FREQUENCY;
