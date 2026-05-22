@@ -19,9 +19,9 @@
 
 #define TIM_PWM htim2
 #define TIM_TRACTION_CONTROL htim7
-#define TIM_FRONT_RIGHT htim1
-#define TIM_REAR_LEFT htim3
-#define TIM_REAR_RIGHT htim4
+#define TIM_REAR_LEFT htim1
+#define TIM_REAR_RIGHT htim3
+#define TIM_FRONT_RIGHT htim5
 
 #define MOTOR_KP 1.0f
 #define MOTOR_KI 0.5f
@@ -304,9 +304,9 @@ void mymain()
     set_motor_forwards(&motor_rear_right);
 
     HAL_TIM_PWM_Start(&TIM_PWM, TIM_CHANNEL_1 | TIM_CHANNEL_2);
-    HAL_TIM_Encoder_Start(&TIM_FRONT_RIGHT, TIM_CHANNEL_ALL);
-    HAL_TIM_Encoder_Start(&TIM_REAR_LEFT, TIM_CHANNEL_ALL);
-    HAL_TIM_Encoder_Start(&TIM_REAR_RIGHT, TIM_CHANNEL_ALL);
+    HAL_TIM_Base_Start(&TIM_REAR_LEFT);
+    HAL_TIM_Base_Start(&TIM_REAR_RIGHT);
+    HAL_TIM_Base_Start(&TIM_FRONT_RIGHT);
     HAL_TIM_Base_Start_IT(&TIM_TRACTION_CONTROL);
 
     HAL_UARTEx_ReceiveToIdle_IT(&huart4, (uint8_t*)(rxBuffer), RX_BUFFER_SIZE);

@@ -63,14 +63,14 @@ void Error_Handler(void);
 #define USER_BUTTON_Pin GPIO_PIN_13
 #define USER_BUTTON_GPIO_Port GPIOC
 #define USER_BUTTON_EXTI_IRQn EXTI13_IRQn
-#define MOTOR_A_PWM_Pin GPIO_PIN_0
-#define MOTOR_A_PWM_GPIO_Port GPIOA
+#define BLUETOOTH_TX_Pin GPIO_PIN_0
+#define BLUETOOTH_TX_GPIO_Port GPIOA
 #define MOTOR_B_PWM_Pin GPIO_PIN_1
 #define MOTOR_B_PWM_GPIO_Port GPIOA
-#define ENC_B_CH1_Pin GPIO_PIN_6
-#define ENC_B_CH1_GPIO_Port GPIOA
-#define ENC_B_CH2_Pin GPIO_PIN_7
-#define ENC_B_CH2_GPIO_Port GPIOA
+#define ENC_C_Pin GPIO_PIN_4
+#define ENC_C_GPIO_Port GPIOA
+#define MOTOR_A_PWM_Pin GPIO_PIN_5
+#define MOTOR_A_PWM_GPIO_Port GPIOA
 #define MOTOR_B_IN2_Pin GPIO_PIN_12
 #define MOTOR_B_IN2_GPIO_Port GPIOB
 #define MOTOR_B_IN1_Pin GPIO_PIN_13
@@ -79,26 +79,20 @@ void Error_Handler(void);
 #define MOTOR_A_IN2_GPIO_Port GPIOB
 #define MOTOR_A_IN1_Pin GPIO_PIN_15
 #define MOTOR_A_IN1_GPIO_Port GPIOB
-#define ENC_A_CH1_Pin GPIO_PIN_8
-#define ENC_A_CH1_GPIO_Port GPIOA
-#define ENC_A_CH2_Pin GPIO_PIN_9
-#define ENC_A_CH2_GPIO_Port GPIOA
 #define BLUETOOTH_RX_Pin GPIO_PIN_11
 #define BLUETOOTH_RX_GPIO_Port GPIOA
-#define BLUETOOTH_TX_Pin GPIO_PIN_12
-#define BLUETOOTH_TX_GPIO_Port GPIOA
+#define ENC_A_Pin GPIO_PIN_12
+#define ENC_A_GPIO_Port GPIOA
 #define SWDIO_Pin GPIO_PIN_13
 #define SWDIO_GPIO_Port GPIOA
 #define SWCLK_Pin GPIO_PIN_14
 #define SWCLK_GPIO_Port GPIOA
 #define JTDI_Pin GPIO_PIN_15
 #define JTDI_GPIO_Port GPIOA
+#define ENC_B_Pin GPIO_PIN_2
+#define ENC_B_GPIO_Port GPIOD
 #define SWO_Pin GPIO_PIN_3
 #define SWO_GPIO_Port GPIOB
-#define ENC_C_CH1_Pin GPIO_PIN_6
-#define ENC_C_CH1_GPIO_Port GPIOB
-#define ENC_C_CH2_Pin GPIO_PIN_7
-#define ENC_C_CH2_GPIO_Port GPIOB
 
 /* USER CODE BEGIN Private defines */
 
