@@ -33,6 +33,11 @@
 #define TARGET_SLIP_RATIO 0.05f // Example target slip ratio (5%)
 
 typedef struct {
+    GPIO_TypeDef* port;
+    uint16_t pin;
+} Pin_t;
+
+typedef struct {
     // Controller gains
     float Kp;
     float Ki;
@@ -51,6 +56,13 @@ typedef struct {
     float prevError;
     float prevMeasurement; // For derivative on measurement
 } PidControllerState_t;
+
+typedef struct {
+    uint32_t enable_channel;
+    Pin_t enable;
+    Pin_t control1;
+    Pin_t control2;
+} Motor_t;
 
 typedef struct {
     uint8_t throttle;
@@ -78,6 +90,20 @@ PidControllerState_t rearRightPidState = {
     .prevMeasurement = 0.0f,
 };
 
+Motor_t motor_rear_left = {
+    .enable_channel = TIM_CHANNEL_1,
+    .enable = { MOTOR_A_PWM_GPIO_Port, MOTOR_A_PWM_Pin },
+    .control1 = { MOTOR_A_IN1_GPIO_Port, MOTOR_A_IN1_Pin },
+    .control2 = { MOTOR_A_IN2_GPIO_Port, MOTOR_A_IN2_Pin },
+};
+
+Motor_t motor_rear_right = {
+    .enable_channel = TIM_CHANNEL_2,
+    .enable = { MOTOR_B_PWM_GPIO_Port, MOTOR_B_PWM_Pin },
+    .control1 = { MOTOR_B_IN1_GPIO_Port, MOTOR_B_IN1_Pin },
+    .control2 = { MOTOR_B_IN2_GPIO_Port, MOTOR_B_IN2_Pin },
+};
+
 volatile SystemState_t systemState = {
     .throttle = 0,
     .tc_enabled = true,
@@ -91,6 +117,40 @@ StaticQueue_t messageQueueBuffer;
 QueueHandle_t messageQueue;
 
 volatile uint8_t rxBuffer[RX_BUFFER_SIZE];
+
+void set_motor_forwards(Motor_t* motor)
+{
+    HAL_GPIO_WritePin(motor->control1.port, motor->control1.pin, GPIO_PIN_SET);
+    HAL_GPIO_WritePin(motor->control2.port, motor->control2.pin, GPIO_PIN_RESET);
+}
+
+void set_motor_backwards(Motor_t* motor)
+{
+    HAL_GPIO_WritePin(motor->control1.port, motor->control1.pin, GPIO_PIN_RESET);
+    HAL_GPIO_WritePin(motor->control2.port, motor->control2.pin, GPIO_PIN_SET);
+}
+
+void set_motor_coast(Motor_t* motor)
+{
+    HAL_GPIO_WritePin(motor->control1.port, motor->control1.pin, GPIO_PIN_RESET);
+    HAL_GPIO_WritePin(motor->control2.port, motor->control2.pin, GPIO_PIN_RESET);
+}
+
+void set_motor_brake(Motor_t* motor)
+{
+    HAL_GPIO_WritePin(motor->control1.port, motor->control1.pin, GPIO_PIN_SET);
+    HAL_GPIO_WritePin(motor->control2.port, motor->control2.pin, GPIO_PIN_SET);
+}
+
+void set_motor_power(Motor_t* motor, float pwm /* 0.0 to 1.0*/)
+{
+    if (pwm < 0.0f)
+        pwm = 0.0f;
+    else if (pwm > 1.0f)
+        pwm = 1.0f;
+
+    __HAL_TIM_SET_COMPARE(&TIM_PWM, motor->enable_channel, (uint32_t)(pwm * MOTOR_MAX_PWM_VALUE));
+}
 
 float pid_update(PidControllerConfig_t* pidc, PidControllerState_t* pids, float setpoint, float measurement)
 {
@@ -146,26 +206,6 @@ void process_message(Message_t* msg)
     }
 }
 
-void set_motor_pwm(float pwm, uint8_t motor_id)
-{
-    uint32_t channel = -1;
-    switch (motor_id) {
-    case 0:
-        channel = TIM_CHANNEL_1; // Front right
-        break;
-    case 1:
-        channel = TIM_CHANNEL_2; // Rear left
-        break;
-    }
-
-    if (pwm < 0.0f)
-        pwm = 0.0f;
-    else if (pwm > 1.0f)
-        pwm = 1.0f;
-
-    __HAL_TIM_SET_COMPARE(&TIM_PWM, channel, (uint32_t)(pwm * MOTOR_MAX_PWM_VALUE));
-}
-
 /*
  * Tasks
  */
@@ -209,8 +249,8 @@ void task_motor_driver(void* argument)
             float rear_left_pwm = pid_update(&motorPidConfig, &rearLeftPidState, TARGET_SLIP_RATIO, slip_ratio_rear_left); // Assuming target slip is 0
             float rear_right_pwm = pid_update(&motorPidConfig, &rearRightPidState, TARGET_SLIP_RATIO, slip_ratio_rear_right); // Assuming target slip is 0
         } else {
-            set_motor_pwm(1.0f, 0);
-            set_motor_pwm(1.0f, 1);
+            set_motor_power(&motor_rear_left, 1.0f);
+            set_motor_power(&motor_rear_right, 1.0f);
         }
 
         float rps_rear_left = (delta_pulses_rear_left / (float)ENCODER_PPR) * MOTOR_DRIVER_UPDATE_FREQUENCY;
@@ -220,7 +260,7 @@ void task_motor_driver(void* argument)
 
         float pwm = pid_update(&motorPidConfig, &rearLeftPidState, setpoint, rps_rear_left);
 
-        set_motor_pwm(pwm, 0);
+        set_motor_power(&motor_rear_left, pwm);
 
         // uint16_t target_delta_pulses_rear_left =
 
@@ -259,6 +299,9 @@ void hal_tim_period_elapsed_callback(TIM_HandleTypeDef* htim, BaseType_t* xHighe
 void mymain()
 {
     messageQueue = xQueueCreateStatic(MESSAGE_QUEUE_SIZE, sizeof(Message_t), (uint8_t*)(messageQueueStorageBuffer), &messageQueueBuffer);
+
+    set_motor_forwards(&motor_rear_left);
+    set_motor_forwards(&motor_rear_right);
 
     HAL_TIM_PWM_Start(&TIM_PWM, TIM_CHANNEL_1 | TIM_CHANNEL_2);
     HAL_TIM_Encoder_Start(&TIM_FRONT_RIGHT, TIM_CHANNEL_ALL);
