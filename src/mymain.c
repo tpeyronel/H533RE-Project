@@ -15,7 +15,7 @@
 
 #define RX_BUFFER_SIZE (4 * sizeof(Message_t))
 #define MESSAGE_QUEUE_SIZE 8
-#define ENCODER_PPR 200
+#define ENCODER_PPR (100 * 1)
 
 #define TIM_PWM htim2
 #define TIM_TRACTION_CONTROL htim7
