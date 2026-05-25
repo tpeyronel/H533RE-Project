@@ -271,7 +271,8 @@ void task_motor_driver(void* argument)
         uint32_t ticks_since_latest_timestamp = __HAL_TIM_GET_COUNTER(&TIM_ENCODERS)
             - encoder_buffer_latest_timestamp(&encoder_buffer_front_right);
 
-        if (front_right_delta_sum < TRACTION_CONTROL_TICK_THRESHOLD * ENCODER_READ_COUNT
+        if (system_state.tc_enabled
+            && front_right_delta_sum < TRACTION_CONTROL_TICK_THRESHOLD * ENCODER_READ_COUNT
             && ticks_since_latest_timestamp < TRACTION_CONTROL_TICK_THRESHOLD) { // If we have a recent valid measurement
             float rear_left_slip_ratio = ((float)(front_right_delta_sum) / (float)(rear_left_delta_sum)) - 1.0f;
             float rear_right_slip_ratio = ((float)(front_right_delta_sum) / (float)(rear_right_delta_sum)) - 1.0f;
