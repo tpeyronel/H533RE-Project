@@ -80,7 +80,7 @@ typedef struct {
 } Motor_t;
 
 typedef struct {
-    uint8_t throttle;
+    float throttle;
     bool tc_enabled;
 } SystemState_t;
 
@@ -124,7 +124,7 @@ Motor_t motor_rear_right = {
 };
 
 volatile SystemState_t system_state = {
-    .throttle = 0,
+    .throttle = 0.0f,
     .tc_enabled = true,
 };
 
@@ -213,7 +213,7 @@ void process_message(Message_t* msg)
     switch (msg->type) {
     case MSG_TYPE_SET_THROTTLE:
         printf("RX: Set throttle to %u\n", msg->set_throttle.throttle);
-        system_state.throttle = msg->set_throttle.throttle;
+        system_state.throttle = (float)(msg->set_throttle.throttle) / 255.0f;
         break;
     case MSG_TYPE_TOGGLE_TC:
         printf("RX: Toggle TC\n");
@@ -281,20 +281,19 @@ void task_motor_driver(void* argument)
             float rear_left_pwm = pid_update(&motor_pid_config, &rear_left_pid_state, TARGET_SLIP_RATIO, rear_left_slip_ratio); // Assuming target slip is 0
             float rear_right_pwm = pid_update(&motor_pid_config, &rear_right_pid_state, TARGET_SLIP_RATIO, rear_right_slip_ratio); // Assuming target slip is 0
 
-            rear_left_pwm = fminf(rear_left_pwm, system_state.throttle / 255.0f);
-            rear_right_pwm = fminf(rear_right_pwm, system_state.throttle / 255.0f);
+            rear_left_pwm = fminf(rear_left_pwm, system_state.throttle);
+            rear_right_pwm = fminf(rear_right_pwm, system_state.throttle);
 
             set_motor_power(&motor_rear_left, rear_left_pwm);
             set_motor_power(&motor_rear_right, rear_right_pwm);
         } else {
-            set_motor_power(&motor_rear_left, system_state.throttle / 255.0f);
-            set_motor_power(&motor_rear_right, system_state.throttle / 255.0f);
+            set_motor_power(&motor_rear_left, system_state.throttle);
+            set_motor_power(&motor_rear_right, system_state.throttle);
         }
 
         // float rps_rear_left = (float)(ENCODER_READ_COUNT * TIM_ENCODERS_FREQUENCY) / (float)(rear_left_delta_sum * ENCODER_PPR);
 
-        // float throttle = (float)(system_state.throttle) / 255.0f; // Normalize throttle to [0, 1]
-        // float setpoint = 1000.0f / 60.0f + (7000.0f / 60.0f) * throttle; // Example: 1000 RPM at 0% throttle, 8000 RPM at 100% throttle
+        // float setpoint = 1000.0f / 60.0f + (7000.0f / 60.0f) * system_state.throttle; // Example: 1000 RPM at 0% throttle, 8000 RPM at 100% throttle
 
         // float pwm = pid_update(&motor_pid_config, &rear_left_pid_state, setpoint, rps_rear_left);
 
