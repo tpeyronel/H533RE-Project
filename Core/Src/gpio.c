@@ -51,6 +51,9 @@ void MX_GPIO_Init(void)
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GPIOB, MOTOR_B_IN2_Pin|MOTOR_B_IN1_Pin|MOTOR_A_IN2_Pin|MOTOR_A_IN1_Pin, GPIO_PIN_RESET);
 
+  /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(GPIOA, LED_TC_ENABLED_Pin|LED_TC_WORKING_Pin|LED_LEFT_SLIP_DETECTED_Pin|LED_RIGHT_SLIP_DETECTED_Pin, GPIO_PIN_RESET);
+
   /*Configure GPIO pin : USER_BUTTON_Pin */
   GPIO_InitStruct.Pin = USER_BUTTON_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
@@ -63,6 +66,13 @@ void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+
+  /*Configure GPIO pins : LED_TC_ENABLED_Pin LED_TC_WORKING_Pin LED_LEFT_SLIP_DETECTED_Pin LED_RIGHT_SLIP_DETECTED_Pin */
+  GPIO_InitStruct.Pin = LED_TC_ENABLED_Pin|LED_TC_WORKING_Pin|LED_LEFT_SLIP_DETECTED_Pin|LED_RIGHT_SLIP_DETECTED_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
   /* EXTI interrupt init*/
   HAL_NVIC_SetPriority(EXTI13_IRQn, 5, 0);

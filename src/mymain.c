@@ -285,16 +285,23 @@ void task_motor_driver(void* argument)
         uint32_t front_right_delta_sum = encoder_buffer_delta_sum(&encoder_buffer_front_right);
         uint32_t rear_left_delta_sum = encoder_buffer_delta_sum(&encoder_buffer_rear_left);
         uint32_t rear_right_delta_sum = encoder_buffer_delta_sum(&encoder_buffer_rear_right);
+        float rear_left_slip_ratio = ((float)(front_right_delta_sum) / (float)(rear_left_delta_sum)) - 1.0f;
+        float rear_right_slip_ratio = ((float)(front_right_delta_sum) / (float)(rear_right_delta_sum)) - 1.0f;
+
+        HAL_GPIO_WritePin(LED_TC_ENABLED_GPIO_Port, LED_TC_ENABLED_Pin, system_state.tc_enabled);
+        HAL_GPIO_WritePin(LED_LEFT_SLIP_DETECTED_GPIO_Port, LED_LEFT_SLIP_DETECTED_Pin, rear_left_slip_ratio > TARGET_SLIP_RATIO);
+        HAL_GPIO_WritePin(LED_RIGHT_SLIP_DETECTED_GPIO_Port, LED_RIGHT_SLIP_DETECTED_Pin, rear_right_slip_ratio > TARGET_SLIP_RATIO);
 
         uint32_t ticks_since_latest_timestamp = __HAL_TIM_GET_COUNTER(&TIM_ENCODERS)
             - encoder_buffer_latest_timestamp(&encoder_buffer_front_right);
 
-        if (system_state.tc_enabled
+        bool perform_tc = system_state.tc_enabled
             && front_right_delta_sum < TRACTION_CONTROL_TICK_THRESHOLD * ENCODER_READ_COUNT
-            && ticks_since_latest_timestamp < TRACTION_CONTROL_TICK_THRESHOLD) { // If we have a recent valid measurement
-            float rear_left_slip_ratio = ((float)(front_right_delta_sum) / (float)(rear_left_delta_sum)) - 1.0f;
-            float rear_right_slip_ratio = ((float)(front_right_delta_sum) / (float)(rear_right_delta_sum)) - 1.0f;
+            && ticks_since_latest_timestamp < TRACTION_CONTROL_TICK_THRESHOLD;
 
+        HAL_GPIO_WritePin(LED_TC_WORKING_GPIO_Port, LED_TC_WORKING_Pin, perform_tc);
+
+        if (perform_tc) { // If we have a recent valid measurement
             motor_pid_config.out_max = system_state.throttle;
 
             float rear_left_pwm = pid_update(&motor_pid_config, &rear_left_pid_state, TARGET_SLIP_RATIO, rear_left_slip_ratio); // Assuming target slip is 0
