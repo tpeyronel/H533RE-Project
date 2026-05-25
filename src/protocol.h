@@ -5,7 +5,7 @@
 enum MessageType : uint8_t {
     MSG_TYPE_SET_THROTTLE = 0,
     MSG_TYPE_TOGGLE_TC = 1,
-} __attribute__((packed));
+};
 
 struct MessageSetThrottle {
     enum MessageType type;
