@@ -82,7 +82,15 @@ typedef struct {
 typedef struct {
     float throttle;
     bool tc_enabled;
+    LogData_t log_data; // For storing data to be sent in logs, updated by motor driver task and read by logging task
 } SystemState_t;
+
+typedef struct {
+    float rear_left_slip_ratio;
+    float rear_right_slip_ratio;
+    float rear_left_pwm;
+    float rear_right_pwm;
+} LogData_t;
 
 EncoderBuffer_t encoder_buffer_front_right = { 0 };
 EncoderBuffer_t encoder_buffer_rear_left = { 0 };
@@ -136,6 +144,16 @@ StaticQueue_t message_queue_buffer;
 QueueHandle_t message_queue;
 
 volatile uint8_t rx_buffer[RX_BUFFER_SIZE];
+
+float fclampf(float value, float min, float max)
+{
+    if (value < min)
+        return min;
+    else if (value > max)
+        return max;
+    else
+        return value;
+}
 
 void set_motor_forwards(Motor_t* motor)
 {
@@ -284,6 +302,11 @@ void task_motor_driver(void* argument)
 
             set_motor_power(&motor_rear_left, rear_left_pwm);
             set_motor_power(&motor_rear_right, rear_right_pwm);
+
+            system_state.log_data.rear_left_slip_ratio = rear_left_slip_ratio;
+            system_state.log_data.rear_right_slip_ratio = rear_right_slip_ratio;
+            system_state.log_data.rear_left_pwm = rear_left_pwm;
+            system_state.log_data.rear_right_pwm = rear_right_pwm;
         } else {
             set_motor_power(&motor_rear_left, system_state.throttle);
             set_motor_power(&motor_rear_right, system_state.throttle);
@@ -296,6 +319,33 @@ void task_motor_driver(void* argument)
         // float pwm = pid_update(&motor_pid_config, &rear_left_pid_state, setpoint, rps_rear_left);
 
         // set_motor_power(&motor_rear_left, pwm);
+    }
+}
+
+void task_logging(void* argument)
+{
+    TickType_t xTimeIncrement = pdMS_TO_TICKS(25);
+    TickType_t pxPreviousWakeTime = xTaskGetTickCount();
+
+    for (;;) {
+        float rear_left_slip_ratio_clamped = fclampf(system_state.log_data.rear_left_slip_ratio, 0.0f, 1.0f);
+        float rear_right_slip_ratio_clamped = fclampf(system_state.log_data.rear_right_slip_ratio, 0.0f, 1.0f);
+
+        struct MessageOutLog msg_out = {
+            .type = MSG_OUT_TYPE_LOG,
+            .throttle = (uint8_t)(system_state.throttle * 255.0f),
+            .rear_left_pwm = (uint8_t)(system_state.log_data.rear_left_pwm * 255.0f),
+            .rear_right_pwm = (uint8_t)(system_state.log_data.rear_right_pwm * 255.0f),
+            .rear_left_slip = (uint8_t)(rear_left_slip_ratio_clamped * 255.0f),
+            .rear_right_slip = (uint8_t)(rear_right_slip_ratio_clamped * 255.0f),
+        };
+
+        MessageOut_t msg_out_union = { 0 };
+        msg_out_union.log = msg_out;
+
+        HAL_UART_Transmit(&huart4, (uint8_t*)(&msg_out_union), MESSAGE_OUT_SIZE, HAL_MAX_DELAY);
+
+        xTaskDelayUntil(&pxPreviousWakeTime, xTimeIncrement);
     }
 }
 
@@ -367,6 +417,7 @@ void mymain()
 
     HAL_UARTEx_ReceiveToIdle_IT(&huart4, (uint8_t*)(rx_buffer), RX_BUFFER_SIZE);
 
-    xTaskCreate(task_message_processing, "MessageProcessing", configMINIMAL_STACK_SIZE * 8, NULL, tskIDLE_PRIORITY + 1, NULL);
-    xTaskCreate(task_motor_driver, "MotorDriver", configMINIMAL_STACK_SIZE * 8, NULL, tskIDLE_PRIORITY + 2, NULL);
+    xTaskCreate(task_motor_driver, "MotorDriver", configMINIMAL_STACK_SIZE * 8, NULL, tskIDLE_PRIORITY + 3, NULL);
+    xTaskCreate(task_message_processing, "MessageProcessing", configMINIMAL_STACK_SIZE * 8, NULL, tskIDLE_PRIORITY + 2, NULL);
+    xTaskCreate(task_logging, "Logging", configMINIMAL_STACK_SIZE * 8, NULL, tskIDLE_PRIORITY + 1, NULL);
 }

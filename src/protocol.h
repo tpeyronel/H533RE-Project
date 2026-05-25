@@ -23,3 +23,23 @@ typedef union {
 } __attribute__((packed)) Message_t;
 
 #define MESSAGE_SIZE sizeof(Message_t)
+
+enum MessageOutType : uint8_t {
+    MSG_OUT_TYPE_LOG = 0,
+};
+
+struct MessageOutLog {
+    enum MessageOutType type;
+    uint8_t throttle; // 0.0 to 1.0
+    uint8_t rear_left_pwm; // 0.0 to 1.0
+    uint8_t rear_right_pwm; // 0.0 to 1.0
+    uint8_t rear_left_slip; // 0-255 representing 0.0 to 1.0 slip ratio (clamped)
+    uint8_t rear_right_slip;
+} __attribute__((packed));
+
+typedef union {
+    enum MessageOutType type;
+    struct MessageOutLog log;
+} __attribute__((packed)) MessageOut_t;
+
+#define MESSAGE_OUT_SIZE sizeof(MessageOut_t)
