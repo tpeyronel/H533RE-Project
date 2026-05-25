@@ -59,8 +59,8 @@ typedef struct {
     float Kd;
 
     // Output limits (Anti-windup)
-    float outMin;
-    float outMax;
+    float out_min;
+    float out_max;
 
     // Sample time (in seconds)
     float T;
@@ -68,8 +68,8 @@ typedef struct {
 
 typedef struct {
     float integrator;
-    float prevError;
-    float prevMeasurement; // For derivative on measurement
+    float prev_error;
+    float prev_measurement; // For derivative on measurement
 } PidControllerState_t;
 
 typedef struct {
@@ -92,21 +92,21 @@ PidControllerConfig_t motor_pid_config = {
     .Kp = MOTOR_KP,
     .Ki = MOTOR_KI,
     .Kd = MOTOR_KD,
-    .outMin = 0.0f,
-    .outMax = 1.0f,
+    .out_min = 0.0f,
+    .out_max = 1.0f,
     .T = MOTOR_DRIVER_UPDATE_INTERVAL,
 };
 
 PidControllerState_t rear_left_pid_state = {
     .integrator = 0.0f,
-    .prevError = 0.0f,
-    .prevMeasurement = 0.0f,
+    .prev_error = 0.0f,
+    .prev_measurement = 0.0f,
 };
 
 PidControllerState_t rear_right_pid_state = {
     .integrator = 0.0f,
-    .prevError = 0.0f,
-    .prevMeasurement = 0.0f,
+    .prev_error = 0.0f,
+    .prev_measurement = 0.0f,
 };
 
 Motor_t motor_rear_left = {
@@ -128,14 +128,14 @@ volatile SystemState_t system_state = {
     .tc_enabled = true,
 };
 
-StaticSemaphore_t motorDriverSemBuffer;
-SemaphoreHandle_t motorDriverSem;
+StaticSemaphore_t motor_driver_sem_buffer;
+SemaphoreHandle_t motor_driver_sem;
 
-volatile Message_t messageQueueStorageBuffer[MESSAGE_QUEUE_SIZE];
-StaticQueue_t messageQueueBuffer;
-QueueHandle_t messageQueue;
+volatile Message_t message_queues_storage_buffer[MESSAGE_QUEUE_SIZE];
+StaticQueue_t message_queue_buffer;
+QueueHandle_t message_queue;
 
-volatile uint8_t rxBuffer[RX_BUFFER_SIZE];
+volatile uint8_t rx_buffer[RX_BUFFER_SIZE];
 
 void set_motor_forwards(Motor_t* motor)
 {
@@ -180,30 +180,30 @@ float pid_update(PidControllerConfig_t* pidc, PidControllerState_t* pids, float 
     float proportional = pidc->Kp * error;
 
     // 3. Integral term (Discrete integration)
-    pids->integrator += 0.5f * pidc->Ki * pidc->T * (error + pids->prevError);
+    pids->integrator += 0.5f * pidc->Ki * pidc->T * (error + pids->prev_error);
 
     // Anti-windup: Clamp the integrator to prevent "runaway"
-    if (pids->integrator > pidc->outMax)
-        pids->integrator = pidc->outMax;
-    else if (pids->integrator < pidc->outMin)
-        pids->integrator = pidc->outMin;
+    if (pids->integrator > pidc->out_max)
+        pids->integrator = pidc->out_max;
+    else if (pids->integrator < pidc->out_min)
+        pids->integrator = pidc->out_min;
 
     // 4. Derivative term (Band-limited differentiation)
     // Using measurement instead of error avoids "derivative kick" on setpoint changes
-    float derivative = -pidc->Kd * (measurement - pids->prevMeasurement) / pidc->T;
+    float derivative = -pidc->Kd * (measurement - pids->prev_measurement) / pidc->T;
 
     // 5. Total Output
     float output = proportional + pids->integrator + derivative;
 
     // Final output clamping
-    if (output > pidc->outMax)
-        output = pidc->outMax;
-    else if (output < pidc->outMin)
-        output = pidc->outMin;
+    if (output > pidc->out_max)
+        output = pidc->out_max;
+    else if (output < pidc->out_min)
+        output = pidc->out_min;
 
     // Store state for next iteration
-    pids->prevError = error;
-    pids->prevMeasurement = measurement;
+    pids->prev_error = error;
+    pids->prev_measurement = measurement;
 
     return output;
 }
@@ -253,7 +253,7 @@ void task_message_processing(void* argument)
     Message_t msg;
 
     for (;;) {
-        if (xQueueReceive(messageQueue, &msg, portMAX_DELAY) == pdPASS) {
+        if (xQueueReceive(message_queue, &msg, portMAX_DELAY) == pdPASS) {
             process_message(&msg);
         }
     }
@@ -262,7 +262,7 @@ void task_message_processing(void* argument)
 void task_motor_driver(void* argument)
 {
     for (;;) {
-        xSemaphoreTake(motorDriverSem, portMAX_DELAY);
+        xSemaphoreTake(motor_driver_sem, portMAX_DELAY);
 
         uint32_t front_right_delta_sum = encoder_buffer_delta_sum(&encoder_buffer_front_right);
         uint32_t rear_left_delta_sum = encoder_buffer_delta_sum(&encoder_buffer_rear_left);
@@ -311,10 +311,10 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef* huart, uint16_t size)
 
     if (huart->Instance == UART4) {
         for (uint16_t offset = 0; offset < size; offset += sizeof(Message_t)) {
-            xQueueSendFromISR(messageQueue, (uint8_t*)(rxBuffer) + offset, &xHigherPriorityTaskWoken);
+            xQueueSendFromISR(message_queue, (uint8_t*)(rx_buffer) + offset, &xHigherPriorityTaskWoken);
         }
 
-        HAL_UARTEx_ReceiveToIdle_IT(huart, (uint8_t*)(rxBuffer), RX_BUFFER_SIZE);
+        HAL_UARTEx_ReceiveToIdle_IT(huart, (uint8_t*)(rx_buffer), RX_BUFFER_SIZE);
         portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
     }
 }
@@ -322,7 +322,7 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef* huart, uint16_t size)
 void hal_tim_period_elapsed_callback(TIM_HandleTypeDef* htim, BaseType_t* xHigherPriorityTaskWoken)
 {
     if (htim->Instance == TIM_TRACTION_CONTROL.Instance) {
-        xSemaphoreGiveFromISR(motorDriverSem, xHigherPriorityTaskWoken);
+        xSemaphoreGiveFromISR(motor_driver_sem, xHigherPriorityTaskWoken);
     }
 }
 
@@ -354,9 +354,9 @@ void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef* htim)
 
 void mymain()
 {
-    messageQueue = xQueueCreateStatic(MESSAGE_QUEUE_SIZE, sizeof(Message_t), (uint8_t*)(messageQueueStorageBuffer), &messageQueueBuffer);
-    motorDriverSem = xSemaphoreCreateBinaryStatic(&motorDriverSemBuffer);
-    xSemaphoreGive(motorDriverSem);
+    message_queue = xQueueCreateStatic(MESSAGE_QUEUE_SIZE, sizeof(Message_t), (uint8_t*)(message_queues_storage_buffer), &message_queue_buffer);
+    motor_driver_sem = xSemaphoreCreateBinaryStatic(&motor_driver_sem_buffer);
+    xSemaphoreGive(motor_driver_sem);
 
     set_motor_forwards(&motor_rear_left);
     set_motor_forwards(&motor_rear_right);
@@ -367,7 +367,7 @@ void mymain()
     HAL_TIM_IC_Start_IT(&TIM_ENCODERS, ENCODER_CHANNEL_REAR_RIGHT);
     HAL_TIM_Base_Start_IT(&TIM_TRACTION_CONTROL);
 
-    HAL_UARTEx_ReceiveToIdle_IT(&huart4, (uint8_t*)(rxBuffer), RX_BUFFER_SIZE);
+    HAL_UARTEx_ReceiveToIdle_IT(&huart4, (uint8_t*)(rx_buffer), RX_BUFFER_SIZE);
 
     xTaskCreate(task_message_processing, "MessageProcessing", configMINIMAL_STACK_SIZE * 8, NULL, tskIDLE_PRIORITY + 1, NULL);
     xTaskCreate(task_motor_driver, "MotorDriver", configMINIMAL_STACK_SIZE * 8, NULL, tskIDLE_PRIORITY + 2, NULL);
