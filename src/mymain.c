@@ -277,12 +277,10 @@ void task_motor_driver(void* argument)
             float rear_left_slip_ratio = ((float)(front_right_delta_sum) / (float)(rear_left_delta_sum)) - 1.0f;
             float rear_right_slip_ratio = ((float)(front_right_delta_sum) / (float)(rear_right_delta_sum)) - 1.0f;
 
-            // TODO: maybe change motor config to have max PWM as system_state.throttle
+            motor_pid_config.out_max = system_state.throttle;
+
             float rear_left_pwm = pid_update(&motor_pid_config, &rear_left_pid_state, TARGET_SLIP_RATIO, rear_left_slip_ratio); // Assuming target slip is 0
             float rear_right_pwm = pid_update(&motor_pid_config, &rear_right_pid_state, TARGET_SLIP_RATIO, rear_right_slip_ratio); // Assuming target slip is 0
-
-            rear_left_pwm = fminf(rear_left_pwm, system_state.throttle);
-            rear_right_pwm = fminf(rear_right_pwm, system_state.throttle);
 
             set_motor_power(&motor_rear_left, rear_left_pwm);
             set_motor_power(&motor_rear_right, rear_right_pwm);
