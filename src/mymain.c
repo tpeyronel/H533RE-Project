@@ -288,6 +288,9 @@ void task_motor_driver(void* argument)
         float rear_left_slip_ratio = ((float)(front_right_delta_sum) / (float)(rear_left_delta_sum)) - 1.0f;
         float rear_right_slip_ratio = ((float)(front_right_delta_sum) / (float)(rear_right_delta_sum)) - 1.0f;
 
+        system_state.log_data.rear_left_slip_ratio = rear_left_slip_ratio;
+        system_state.log_data.rear_right_slip_ratio = rear_right_slip_ratio;
+
         HAL_GPIO_WritePin(LED_TC_ENABLED_GPIO_Port, LED_TC_ENABLED_Pin, system_state.tc_enabled);
         HAL_GPIO_WritePin(LED_LEFT_SLIP_DETECTED_GPIO_Port, LED_LEFT_SLIP_DETECTED_Pin, rear_left_slip_ratio > TARGET_SLIP_RATIO);
         HAL_GPIO_WritePin(LED_RIGHT_SLIP_DETECTED_GPIO_Port, LED_RIGHT_SLIP_DETECTED_Pin, rear_right_slip_ratio > TARGET_SLIP_RATIO);
@@ -301,7 +304,7 @@ void task_motor_driver(void* argument)
 
         HAL_GPIO_WritePin(LED_TC_WORKING_GPIO_Port, LED_TC_WORKING_Pin, perform_tc);
 
-        if (perform_tc) { // If we have a recent valid measurement
+        if (perform_tc) { // If TC is on and we have a recent valid measurement
             motor_pid_config.out_max = system_state.throttle;
 
             float rear_left_pwm = pid_update(&motor_pid_config, &rear_left_pid_state, TARGET_SLIP_RATIO, rear_left_slip_ratio); // Assuming target slip is 0
@@ -310,13 +313,14 @@ void task_motor_driver(void* argument)
             set_motor_power(&motor_rear_left, rear_left_pwm);
             set_motor_power(&motor_rear_right, rear_right_pwm);
 
-            system_state.log_data.rear_left_slip_ratio = rear_left_slip_ratio;
-            system_state.log_data.rear_right_slip_ratio = rear_right_slip_ratio;
             system_state.log_data.rear_left_pwm = rear_left_pwm;
             system_state.log_data.rear_right_pwm = rear_right_pwm;
         } else {
             set_motor_power(&motor_rear_left, system_state.throttle);
             set_motor_power(&motor_rear_right, system_state.throttle);
+
+            system_state.log_data.rear_left_pwm = system_state.throttle;
+            system_state.log_data.rear_right_pwm = system_state.throttle;
         }
 
         // float rps_rear_left = (float)(ENCODER_READ_COUNT * TIM_ENCODERS_FREQUENCY) / (float)(rear_left_delta_sum * ENCODER_PPR);
