@@ -20,6 +20,9 @@
 #define ENCODER_PPR (100 * 1)
 #define ENCODER_BUFFER_SIZE 8
 #define ENCODER_READ_COUNT (ENCODER_BUFFER_SIZE >> 1) // Number of deltas we will calculate from the buffer
+#define ENCODER_ACTIVE_CHANNEL_FRONT_RIGHT HAL_TIM_ACTIVE_CHANNEL_1
+#define ENCODER_ACTIVE_CHANNEL_REAR_LEFT HAL_TIM_ACTIVE_CHANNEL_2
+#define ENCODER_ACTIVE_CHANNEL_REAR_RIGHT HAL_TIM_ACTIVE_CHANNEL_3
 #define ENCODER_CHANNEL_FRONT_RIGHT TIM_CHANNEL_1
 #define ENCODER_CHANNEL_REAR_LEFT TIM_CHANNEL_2
 #define ENCODER_CHANNEL_REAR_RIGHT TIM_CHANNEL_3
@@ -389,18 +392,21 @@ void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef* htim)
 {
     /* Forward to IRQ handler for encoder timer if this callback is for that timer */
     if (htim == &TIM_ENCODERS || htim->Instance == TIM_ENCODERS.Instance) {
-        uint32_t timestamp = HAL_TIM_ReadCapturedValue(htim, htim->Channel);
+        uint32_t timestamp;
 
         EncoderBuffer_t* buffer;
         switch (htim->Channel) {
-        case ENCODER_CHANNEL_FRONT_RIGHT:
+        case ENCODER_ACTIVE_CHANNEL_FRONT_RIGHT:
             buffer = &encoder_buffer_front_right;
+            timestamp = HAL_TIM_ReadCapturedValue(htim, ENCODER_CHANNEL_FRONT_RIGHT);
             break;
-        case ENCODER_CHANNEL_REAR_LEFT:
+        case ENCODER_ACTIVE_CHANNEL_REAR_LEFT:
             buffer = &encoder_buffer_rear_left;
+            timestamp = HAL_TIM_ReadCapturedValue(htim, ENCODER_CHANNEL_REAR_LEFT);
             break;
-        case ENCODER_CHANNEL_REAR_RIGHT:
+        case ENCODER_ACTIVE_CHANNEL_REAR_RIGHT:
             buffer = &encoder_buffer_rear_right;
+            timestamp = HAL_TIM_ReadCapturedValue(htim, ENCODER_CHANNEL_REAR_RIGHT);
             break;
         default:
             return; // Not an encoder channel we're tracking
