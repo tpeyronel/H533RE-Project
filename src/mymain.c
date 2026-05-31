@@ -18,14 +18,16 @@
 #define MESSAGE_QUEUE_SIZE 8
 
 #define ENCODER_PPR (100 * 1)
-#define ENCODER_BUFFER_SIZE 8
-#define ENCODER_READ_COUNT (ENCODER_BUFFER_SIZE >> 1) // Number of deltas we will calculate from the buffer
+#define ENCODER_BUFFER_SIZE 128
 #define ENCODER_ACTIVE_CHANNEL_FRONT_RIGHT HAL_TIM_ACTIVE_CHANNEL_1
 #define ENCODER_ACTIVE_CHANNEL_REAR_LEFT HAL_TIM_ACTIVE_CHANNEL_2
 #define ENCODER_ACTIVE_CHANNEL_REAR_RIGHT HAL_TIM_ACTIVE_CHANNEL_3
 #define ENCODER_CHANNEL_FRONT_RIGHT TIM_CHANNEL_1
 #define ENCODER_CHANNEL_REAR_LEFT TIM_CHANNEL_2
 #define ENCODER_CHANNEL_REAR_RIGHT TIM_CHANNEL_3
+
+#define PULSE_LOWER_THRESHOLD_COEFFICIENT 0.75f
+#define PULSE_UPPER_THRESHOLD_COEFFICIENT 1.3f
 
 #define TIM_ENCODERS htim2
 #define TIM_ENCODERS_FREQUENCY 16000000 // 16 MHz timer clock frequency
@@ -47,7 +49,9 @@
 
 typedef struct {
     volatile uint32_t index; // Points to the last written timestamp.
-    volatile uint32_t timestamps[ENCODER_BUFFER_SIZE];
+    volatile uint32_t last_timestamp; // For quick access to the most recent timestamp without indexing into the array.
+    volatile uint32_t sum; // Running (unfiltered) sum of the deltas for quick average calculation.
+    volatile uint32_t deltas[ENCODER_BUFFER_SIZE];
 } EncoderBuffer_t;
 
 typedef struct {
@@ -247,23 +251,88 @@ void process_message(Message_t* msg)
     }
 }
 
-uint32_t encoder_buffer_delta_sum(EncoderBuffer_t* buffer)
+bool delta_filter(uint32_t delta, uint32_t mean)
 {
-    uint32_t sum = 0;
-    uint32_t index = buffer->index;
-    uint32_t latest = buffer->timestamps[index];
-    for (uint32_t i = 0; i < ENCODER_READ_COUNT; i++) {
-        index = (index - 1 + ENCODER_BUFFER_SIZE) % ENCODER_BUFFER_SIZE;
-        uint32_t previous = buffer->timestamps[index];
-        sum += latest - previous; // Timer counter register is 32-bit, so it will automatically wrap around on overflow, giving correct delta even across overflows.
-        latest = previous;
-    }
-    return sum;
+    return (mean * PULSE_LOWER_THRESHOLD_COEFFICIENT <= delta) && (delta <= mean * PULSE_UPPER_THRESHOLD_COEFFICIENT);
 }
 
-uint32_t encoder_buffer_latest_timestamp(EncoderBuffer_t* buffer)
+uint32_t encoder_buffer_filtered_delta_sum(EncoderBuffer_t* buffer, uint32_t* filter_count)
 {
-    return buffer->timestamps[buffer->index];
+    uint32_t mean = buffer->sum / ENCODER_BUFFER_SIZE;
+    uint32_t filtered_sum = 0;
+    uint32_t count = 0;
+    for (uint32_t i = 0; i < ENCODER_BUFFER_SIZE; i++) {
+        uint32_t delta = buffer->deltas[i];
+        if (delta_filter(delta, mean)) {
+            filtered_sum += delta;
+            count++;
+        }
+    }
+    *filter_count = count;
+    return filtered_sum;
+}
+
+float encoder_buffer_filtered_std(EncoderBuffer_t* buffer, uint32_t mean)
+{
+    float variance = 0.0f;
+    uint32_t count = 0;
+    for (uint32_t i = 0; i < ENCODER_BUFFER_SIZE; i++) {
+        uint32_t delta = buffer->deltas[i];
+        if (delta_filter(delta, mean)) {
+            float diff = (float)delta - (float)mean;
+            variance += diff * diff;
+            count++;
+        }
+    }
+    variance /= (float)count;
+    return sqrtf(variance);
+}
+
+uint32_t encoder_buffer_filtered_max(EncoderBuffer_t* buffer)
+{
+    uint32_t mean = buffer->sum / ENCODER_BUFFER_SIZE;
+    uint32_t max = 0;
+    for (uint32_t i = 0; i < ENCODER_BUFFER_SIZE; i++) {
+        uint32_t delta = buffer->deltas[i];
+        if (delta > max && delta_filter(delta, mean)) {
+            max = delta;
+        }
+    }
+    return max;
+}
+
+uint32_t encoder_buffer_filtered_min(EncoderBuffer_t* buffer)
+{
+    uint32_t mean = buffer->sum / ENCODER_BUFFER_SIZE;
+    uint32_t min = UINT32_MAX;
+    for (uint32_t i = 0; i < ENCODER_BUFFER_SIZE; i++) {
+        uint32_t delta = buffer->deltas[i];
+        if (delta < min && delta_filter(delta, mean)) {
+            min = delta;
+        }
+    }
+    return min;
+}
+
+void debug_encoder(EncoderBuffer_t* buffer, uint32_t filtered_delta_sum, uint32_t filter_count)
+{
+    filter_count = filter_count > 0 ? filter_count : 1; // Avoid division by zero
+
+    float rps = (float)(filter_count * TIM_ENCODERS_FREQUENCY) / (float)(filtered_delta_sum * ENCODER_PPR);
+    printf("rpm: %u, mean: %u, std: %u, max: %u, min: %u, c: %u\n",
+        (uint32_t)(rps * 60.0f),
+        (uint32_t)(filtered_delta_sum / filter_count),
+        (uint32_t)(encoder_buffer_filtered_std(buffer, filtered_delta_sum / filter_count)),
+        (uint32_t)(encoder_buffer_filtered_max(buffer)),
+        (uint32_t)(encoder_buffer_filtered_min(buffer)),
+        filter_count);
+
+    // printf("delta sum: %lu\n", rear_left_delta_sum);
+    // float setpoint = 1000.0f / 60.0f + (7000.0f / 60.0f) * system_state.throttle; // Example: 1000 RPM at 0% throttle, 8000 RPM at 100% throttle
+
+    // float pwm = pid_update(&motor_pid_config, &rear_left_pid_state, setpoint, rps_rear_left);
+
+    // set_motor_power(&motor_rear_left, pwm);
 }
 
 /*
@@ -286,11 +355,12 @@ void task_motor_driver(void* argument)
     for (;;) {
         xSemaphoreTake(motor_driver_sem, portMAX_DELAY);
 
-        uint32_t front_right_delta_sum = encoder_buffer_delta_sum(&encoder_buffer_front_right);
-        uint32_t rear_left_delta_sum = encoder_buffer_delta_sum(&encoder_buffer_rear_left);
-        uint32_t rear_right_delta_sum = encoder_buffer_delta_sum(&encoder_buffer_rear_right);
-        float rear_left_slip_ratio = ((float)(front_right_delta_sum) / (float)(rear_left_delta_sum)) - 1.0f;
-        float rear_right_slip_ratio = ((float)(front_right_delta_sum) / (float)(rear_right_delta_sum)) - 1.0f;
+        uint32_t front_right_filter_count, rear_left_filter_count, rear_right_filter_count;
+        uint32_t front_right_filtered_delta_sum = encoder_buffer_filtered_delta_sum(&encoder_buffer_front_right, &front_right_filter_count);
+        uint32_t rear_left_filtered_delta_sum = encoder_buffer_filtered_delta_sum(&encoder_buffer_rear_left, &rear_left_filter_count);
+        uint32_t rear_right_filtered_delta_sum = encoder_buffer_filtered_delta_sum(&encoder_buffer_rear_right, &rear_right_filter_count);
+        float rear_left_slip_ratio = ((float)(front_right_filtered_delta_sum) / (float)(rear_left_filtered_delta_sum)) - 1.0f;
+        float rear_right_slip_ratio = ((float)(front_right_filtered_delta_sum) / (float)(rear_right_filtered_delta_sum)) - 1.0f;
 
         system_state.log_data.rear_left_slip_ratio = rear_left_slip_ratio;
         system_state.log_data.rear_right_slip_ratio = rear_right_slip_ratio;
@@ -299,11 +369,10 @@ void task_motor_driver(void* argument)
         HAL_GPIO_WritePin(LED_LEFT_SLIP_DETECTED_GPIO_Port, LED_LEFT_SLIP_DETECTED_Pin, rear_left_slip_ratio > TARGET_SLIP_RATIO);
         HAL_GPIO_WritePin(LED_RIGHT_SLIP_DETECTED_GPIO_Port, LED_RIGHT_SLIP_DETECTED_Pin, rear_right_slip_ratio > TARGET_SLIP_RATIO);
 
-        uint32_t ticks_since_latest_timestamp = __HAL_TIM_GET_COUNTER(&TIM_ENCODERS)
-            - encoder_buffer_latest_timestamp(&encoder_buffer_front_right);
+        uint32_t ticks_since_latest_timestamp = __HAL_TIM_GET_COUNTER(&TIM_ENCODERS) - encoder_buffer_front_right.last_timestamp;
 
         bool perform_tc = system_state.tc_enabled
-            && front_right_delta_sum < TRACTION_CONTROL_TICK_THRESHOLD * ENCODER_READ_COUNT
+            && front_right_filtered_delta_sum < TRACTION_CONTROL_TICK_THRESHOLD * front_right_filter_count
             && ticks_since_latest_timestamp < TRACTION_CONTROL_TICK_THRESHOLD;
 
         HAL_GPIO_WritePin(LED_TC_WORKING_GPIO_Port, LED_TC_WORKING_Pin, perform_tc);
@@ -327,13 +396,7 @@ void task_motor_driver(void* argument)
             system_state.log_data.rear_right_pwm = system_state.throttle;
         }
 
-        // float rps_rear_left = (float)(ENCODER_READ_COUNT * TIM_ENCODERS_FREQUENCY) / (float)(rear_left_delta_sum * ENCODER_PPR);
-
-        // float setpoint = 1000.0f / 60.0f + (7000.0f / 60.0f) * system_state.throttle; // Example: 1000 RPM at 0% throttle, 8000 RPM at 100% throttle
-
-        // float pwm = pid_update(&motor_pid_config, &rear_left_pid_state, setpoint, rps_rear_left);
-
-        // set_motor_power(&motor_rear_left, pwm);
+        debug_encoder(&encoder_buffer_rear_left, rear_left_filtered_delta_sum, rear_left_filter_count);
     }
 }
 
@@ -414,7 +477,10 @@ void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef* htim)
         }
 
         buffer->index = (buffer->index + 1) % ENCODER_BUFFER_SIZE;
-        buffer->timestamps[buffer->index] = timestamp;
+        buffer->sum -= buffer->deltas[buffer->index]; // Remove the old value from the sum
+        buffer->deltas[buffer->index] = timestamp - buffer->last_timestamp; // This will correctly handle timer overflow due to unsigned arithmetic
+        buffer->sum += buffer->deltas[buffer->index]; // Add the new value to the sum
+        buffer->last_timestamp = timestamp;
     }
 }
 
