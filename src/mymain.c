@@ -83,17 +83,17 @@ typedef struct {
 } Motor_t;
 
 typedef struct {
-    float throttle;
-    bool tc_enabled;
-    LogData_t log_data; // For storing data to be sent in logs, updated by motor driver task and read by logging task
-} SystemState_t;
-
-typedef struct {
     float rear_left_slip_ratio;
     float rear_right_slip_ratio;
     float rear_left_pwm;
     float rear_right_pwm;
 } LogData_t;
+
+typedef struct {
+    float throttle;
+    bool tc_enabled;
+    LogData_t log_data; // For storing data to be sent in logs, updated by motor driver task and read by logging task
+} SystemState_t;
 
 EncoderBuffer_t encoder_buffer_front_right = { 0 };
 EncoderBuffer_t encoder_buffer_rear_left = { 0 };
@@ -137,6 +137,7 @@ Motor_t motor_rear_right = {
 volatile SystemState_t system_state = {
     .throttle = 0.0f,
     .tc_enabled = true,
+    .log_data = { 0 },
 };
 
 StaticSemaphore_t motor_driver_sem_buffer;
