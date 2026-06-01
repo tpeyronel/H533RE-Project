@@ -102,8 +102,8 @@ int main(void)
   MX_ICACHE_Init();
   MX_TIM3_Init();
   MX_TIM7_Init();
-  MX_UART4_Init();
   MX_TIM2_Init();
+  MX_UART5_Init();
   /* USER CODE BEGIN 2 */
   mymain();
   /* USER CODE END 2 */
