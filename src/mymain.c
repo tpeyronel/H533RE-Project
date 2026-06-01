@@ -11,11 +11,16 @@
 #include "usart.h"
 #include <math.h>
 #include <stdbool.h>
+#include <assert.h>
 
 #include "protocol.h"
 
 #define RX_BUFFER_SIZE (4 * sizeof(Message_t))
 #define MESSAGE_QUEUE_SIZE 8
+
+#define MOTOR_DRIVER_TASK_STACK_SIZE (configMINIMAL_STACK_SIZE * 8)
+#define MESSAGE_PROCESSING_TASK_STACK_SIZE (configMINIMAL_STACK_SIZE * 8)
+#define LOGGING_TASK_STACK_SIZE (configMINIMAL_STACK_SIZE * 8)
 
 #define ENCODER_PPR (100 * 1)
 #define ENCODER_BUFFER_SIZE 128
@@ -146,6 +151,14 @@ volatile SystemState_t system_state = {
 
 StaticSemaphore_t motor_driver_sem_buffer;
 SemaphoreHandle_t motor_driver_sem;
+
+StaticTask_t motor_driver_task_buffer;
+StaticTask_t message_processing_task_buffer;
+StaticTask_t logging_task_buffer;
+
+StackType_t motor_driver_task_stack[MOTOR_DRIVER_TASK_STACK_SIZE];
+StackType_t message_processing_task_stack[MESSAGE_PROCESSING_TASK_STACK_SIZE];
+StackType_t logging_task_stack[LOGGING_TASK_STACK_SIZE];
 
 volatile Message_t message_queues_storage_buffer[MESSAGE_QUEUE_SIZE];
 StaticQueue_t message_queue_buffer;
@@ -421,7 +434,7 @@ void task_logging(void* argument)
         MessageOut_t msg_out_union = { 0 };
         msg_out_union.log = msg_out;
 
-        HAL_UART_Transmit(&huart4, (uint8_t*)(&msg_out_union), MESSAGE_OUT_SIZE, HAL_MAX_DELAY);
+        HAL_UART_Transmit(&huart5, (uint8_t*)(&msg_out_union), MESSAGE_OUT_SIZE, HAL_MAX_DELAY);
 
         xTaskDelayUntil(&pxPreviousWakeTime, xTimeIncrement);
     }
@@ -435,7 +448,7 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef* huart, uint16_t size)
 {
     BaseType_t xHigherPriorityTaskWoken = pdFALSE;
 
-    if (huart->Instance == UART4) {
+    if (huart->Instance == UART5) {
         for (uint16_t offset = 0; offset < size; offset += sizeof(Message_t)) {
             xQueueSendFromISR(message_queue, (uint8_t*)(rx_buffer) + offset, &xHigherPriorityTaskWoken);
         }
@@ -499,9 +512,32 @@ void mymain()
     HAL_TIM_IC_Start_IT(&TIM_ENCODERS, ENCODER_CHANNEL_REAR_RIGHT);
     HAL_TIM_Base_Start_IT(&TIM_TRACTION_CONTROL);
 
-    HAL_UARTEx_ReceiveToIdle_IT(&huart4, (uint8_t*)(rx_buffer), RX_BUFFER_SIZE);
+    HAL_UARTEx_ReceiveToIdle_IT(&huart5, (uint8_t*)(rx_buffer), RX_BUFFER_SIZE);
 
-    xTaskCreate(task_motor_driver, "MotorDriver", configMINIMAL_STACK_SIZE * 8, NULL, tskIDLE_PRIORITY + 3, NULL);
-    xTaskCreate(task_message_processing, "MessageProcessing", configMINIMAL_STACK_SIZE * 8, NULL, tskIDLE_PRIORITY + 2, NULL);
-    xTaskCreate(task_logging, "Logging", configMINIMAL_STACK_SIZE * 8, NULL, tskIDLE_PRIORITY + 1, NULL);
+    assert(xTaskCreateStatic(task_motor_driver,
+               "MotorDriver",
+               MOTOR_DRIVER_TASK_STACK_SIZE,
+               NULL,
+               tskIDLE_PRIORITY + 3,
+               motor_driver_task_stack,
+               &motor_driver_task_buffer)
+        != NULL);
+
+    assert(xTaskCreateStatic(task_message_processing,
+               "MessageProcessing",
+               MESSAGE_PROCESSING_TASK_STACK_SIZE,
+               NULL,
+               tskIDLE_PRIORITY + 2,
+               message_processing_task_stack,
+               &message_processing_task_buffer)
+        != NULL);
+
+    assert(xTaskCreateStatic(task_logging,
+               "Logging",
+               LOGGING_TASK_STACK_SIZE,
+               NULL,
+               tskIDLE_PRIORITY + 1,
+               logging_task_stack,
+               &logging_task_buffer)
+        != NULL);
 }
