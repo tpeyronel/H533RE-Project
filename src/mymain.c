@@ -9,10 +9,11 @@
 #include "task.h"
 #include "tim.h"
 #include "usart.h"
+#include <assert.h>
 #include <math.h>
 #include <stdbool.h>
-#include <assert.h>
 
+#include "encoder_buffer.h"
 #include "protocol.h"
 
 #define RX_BUFFER_SIZE (4 * sizeof(Message_t))
@@ -22,8 +23,6 @@
 #define MESSAGE_PROCESSING_TASK_STACK_SIZE (configMINIMAL_STACK_SIZE * 8)
 #define LOGGING_TASK_STACK_SIZE (configMINIMAL_STACK_SIZE * 8)
 
-#define ENCODER_PPR (100 * 1)
-#define ENCODER_BUFFER_SIZE 128
 #define ENCODER_ACTIVE_CHANNEL_FRONT_RIGHT HAL_TIM_ACTIVE_CHANNEL_1
 #define ENCODER_ACTIVE_CHANNEL_REAR_LEFT HAL_TIM_ACTIVE_CHANNEL_2
 #define ENCODER_ACTIVE_CHANNEL_REAR_RIGHT HAL_TIM_ACTIVE_CHANNEL_3
@@ -31,33 +30,20 @@
 #define ENCODER_CHANNEL_REAR_LEFT TIM_CHANNEL_2
 #define ENCODER_CHANNEL_REAR_RIGHT TIM_CHANNEL_3
 
-#define PULSE_LOWER_THRESHOLD_COEFFICIENT 0.75f
-#define PULSE_UPPER_THRESHOLD_COEFFICIENT 1.3f
-
 #define TIM_ENCODERS htim2
-#define TIM_ENCODERS_FREQUENCY 16000000 // 16 MHz timer clock frequency
 #define TIM_PWM htim3
 #define TIM_TRACTION_CONTROL htim7
 
-#define TRACTION_CONTROL_MIN_RPM 1
-// Minimum number of timer ticks for one encoder pulse at minimum RPM, used to detect if the wheel is essentially stopped.
-#define TRACTION_CONTROL_TICK_THRESHOLD ((TIM_ENCODERS_FREQUENCY * 60) / (ENCODER_PPR * TRACTION_CONTROL_MIN_RPM))
+#define TRACTION_CONTROL_RPS_THRESHOLD 0.5f
 
-#define MOTOR_KP 1.0f
-#define MOTOR_KI 0.5f
-#define MOTOR_KD 0.1f
+#define MOTOR_KP 0.05f
+#define MOTOR_KI 0.05f
+#define MOTOR_KD 0.00f
 #define MOTOR_DRIVER_UPDATE_INTERVAL 0.005f // 5 ms
 #define MOTOR_DRIVER_UPDATE_FREQUENCY 200.0f // 200 Hz
 #define MOTOR_MAX_PWM_VALUE 1000 // Assuming timer is configured for 1000 steps (0-100% duty cycle)
 
 #define TARGET_SLIP_RATIO 0.05f // Example target slip ratio (5%)
-
-typedef struct {
-    volatile uint32_t index; // Points to the last written timestamp.
-    volatile uint32_t last_timestamp; // For quick access to the most recent timestamp without indexing into the array.
-    volatile uint32_t sum; // Running (unfiltered) sum of the deltas for quick average calculation.
-    volatile uint32_t deltas[ENCODER_BUFFER_SIZE];
-} EncoderBuffer_t;
 
 typedef struct {
     GPIO_TypeDef* port;
@@ -264,99 +250,41 @@ void process_message(Message_t* msg)
     }
 }
 
-bool delta_filter(uint32_t delta, uint32_t mean)
+void debug_encoder(EncoderBuffer_t* buffer, float rps)
 {
-    return (mean * PULSE_LOWER_THRESHOLD_COEFFICIENT <= delta) && (delta <= mean * PULSE_UPPER_THRESHOLD_COEFFICIENT);
-}
+    // printf("rpm: %u, mean: %u, std: %u, max: %u, min: %u, c: %u\n",
+    //     (uint32_t)(rps * 60.0f),
+    //     (uint32_t)(filtered_delta_sum / (filter_count ? filter_count : 1)),
+    //     (uint32_t)(encoder_buffer_filtered_std(buffer, filtered_delta_sum / (filter_count ? filter_count : 1))),
+    //     (uint32_t)(encoder_buffer_filtered_max(buffer)),
+    //     (uint32_t)(encoder_buffer_filtered_min(buffer)),
+    //     filter_count);
 
-uint32_t encoder_buffer_filtered_delta_sum(EncoderBuffer_t* buffer, uint32_t* filter_count)
-{
-    uint32_t mean = buffer->sum / ENCODER_BUFFER_SIZE;
-    uint32_t filtered_sum = 0;
-    uint32_t count = 0;
-    for (uint32_t i = 0; i < ENCODER_BUFFER_SIZE; i++) {
-        uint32_t delta = buffer->deltas[i];
-        if (delta_filter(delta, mean)) {
-            filtered_sum += delta;
-            count++;
-        }
-    }
-    *filter_count = count;
-    return filtered_sum;
-}
-
-float encoder_buffer_filtered_std(EncoderBuffer_t* buffer, uint32_t mean)
-{
-    float variance = 0.0f;
-    uint32_t count = 0;
-    for (uint32_t i = 0; i < ENCODER_BUFFER_SIZE; i++) {
-        uint32_t delta = buffer->deltas[i];
-        if (delta_filter(delta, mean)) {
-            float diff = (float)delta - (float)mean;
-            variance += diff * diff;
-            count++;
-        }
-    }
-    variance /= (float)count;
-    return sqrtf(variance);
-}
-
-uint32_t encoder_buffer_filtered_max(EncoderBuffer_t* buffer)
-{
-    uint32_t mean = buffer->sum / ENCODER_BUFFER_SIZE;
-    uint32_t max = 0;
-    for (uint32_t i = 0; i < ENCODER_BUFFER_SIZE; i++) {
-        uint32_t delta = buffer->deltas[i];
-        if (delta > max && delta_filter(delta, mean)) {
-            max = delta;
-        }
-    }
-    return max;
-}
-
-uint32_t encoder_buffer_filtered_min(EncoderBuffer_t* buffer)
-{
-    uint32_t mean = buffer->sum / ENCODER_BUFFER_SIZE;
-    uint32_t min = UINT32_MAX;
-    for (uint32_t i = 0; i < ENCODER_BUFFER_SIZE; i++) {
-        uint32_t delta = buffer->deltas[i];
-        if (delta < min && delta_filter(delta, mean)) {
-            min = delta;
-        }
-    }
-    return min;
-}
-
-void encoder_buffer_print_last_n_deltas(EncoderBuffer_t* buffer, uint32_t n)
-{
-    printf("Last %lu deltas (mean %lu): ", n, buffer->sum / ENCODER_BUFFER_SIZE);
-    uint32_t index = buffer->index;
-    for (uint32_t i = 0; i < n; i++) {
-        printf("%lu ", buffer->deltas[index]);
-        index = (index + ENCODER_BUFFER_SIZE - 1) % ENCODER_BUFFER_SIZE;
-    }
-    printf("\n");
-}
-
-void debug_encoder(EncoderBuffer_t* buffer, uint32_t filtered_delta_sum, uint32_t filter_count)
-{
-    filter_count = filter_count > 0 ? filter_count : 1; // Avoid division by zero
-
-    float rps = (float)(filter_count * TIM_ENCODERS_FREQUENCY) / (float)(filtered_delta_sum * ENCODER_PPR);
-    printf("rpm: %u, mean: %u, std: %u, max: %u, min: %u, c: %u\n",
-        (uint32_t)(rps * 60.0f),
-        (uint32_t)(filtered_delta_sum / filter_count),
-        (uint32_t)(encoder_buffer_filtered_std(buffer, filtered_delta_sum / filter_count)),
-        (uint32_t)(encoder_buffer_filtered_max(buffer)),
-        (uint32_t)(encoder_buffer_filtered_min(buffer)),
-        filter_count);
+    // printf("%u\n", system_state.log_data.rear_left_pwm);
 
     // printf("delta sum: %lu\n", rear_left_delta_sum);
-    // float setpoint = 1000.0f / 60.0f + (7000.0f / 60.0f) * system_state.throttle; // Example: 1000 RPM at 0% throttle, 8000 RPM at 100% throttle
+    float target_rps = 100.0f / 60.0f + (5900.0f / 60.0f) * system_state.throttle; // Example: 100 RPM at 0% throttle, 6000 RPM at 100% throttle
 
-    // float pwm = pid_update(&motor_pid_config, &rear_left_pid_state, setpoint, rps_rear_left);
+    float pwm = pid_update(&motor_pid_config, &rear_left_pid_state, target_rps, rps);
 
-    // set_motor_power(&motor_rear_left, pwm);
+    set_motor_power(&motor_rear_left, pwm);
+    // set_motor_power(&motor_rear_left, 1.0f);
+    // set_motor_power(&motor_rear_left, system_state.throttle);
+
+    static uint32_t last_print = 0;
+    uint32_t now = xTaskGetTickCount();
+    if (now - last_print >= pdMS_TO_TICKS(100)) {
+        last_print = now;
+        // printf("rpm: %u, mean: %u, std: %u, max: %u, min: %u, c: %u\n",
+        // (uint32_t)(rps * 60.0f),
+        // (uint32_t)(filtered_delta_sum / (filter_count ? filter_count : 1)),
+        // (uint32_t)(encoder_buffer_filtered_std(buffer, filtered_delta_sum / (filter_count ? filter_count : 1))),
+        // (uint32_t)(encoder_buffer_filtered_max(buffer)),
+        // (uint32_t)(encoder_buffer_filtered_min(buffer)),
+        // filter_count);
+        // printf("RPM: %u, Setpoint: %u, PWM: %u\n", (uint32_t)(rps * 60.0f), (uint32_t)(setpoint * 60.0f), (uint32_t)(pwm * 100.0f));
+        encoder_buffer_print_last_n_deltas(buffer, 24);
+    }
 }
 
 /*
@@ -379,12 +307,11 @@ void task_motor_driver(void* argument)
     for (;;) {
         xSemaphoreTake(motor_driver_sem, portMAX_DELAY);
 
-        uint32_t front_right_filter_count, rear_left_filter_count, rear_right_filter_count;
-        uint32_t front_right_filtered_delta_sum = encoder_buffer_filtered_delta_sum(&encoder_buffer_front_right, &front_right_filter_count);
-        uint32_t rear_left_filtered_delta_sum = encoder_buffer_filtered_delta_sum(&encoder_buffer_rear_left, &rear_left_filter_count);
-        uint32_t rear_right_filtered_delta_sum = encoder_buffer_filtered_delta_sum(&encoder_buffer_rear_right, &rear_right_filter_count);
-        float rear_left_slip_ratio = ((float)(front_right_filtered_delta_sum) / (float)(rear_left_filtered_delta_sum)) - 1.0f;
-        float rear_right_slip_ratio = ((float)(front_right_filtered_delta_sum) / (float)(rear_right_filtered_delta_sum)) - 1.0f;
+        float front_right_rps = encoder_buffer_compute_rps(&encoder_buffer_front_right);
+        float rear_left_rps = encoder_buffer_compute_rps(&encoder_buffer_rear_left);
+        float rear_right_rps = encoder_buffer_compute_rps(&encoder_buffer_rear_right);
+        float rear_left_slip_ratio = (rear_left_rps / front_right_rps) - 1.0f;
+        float rear_right_slip_ratio = (rear_right_rps / front_right_rps) - 1.0f;
 
         system_state.log_data.rear_left_slip_ratio = rear_left_slip_ratio;
         system_state.log_data.rear_right_slip_ratio = rear_right_slip_ratio;
@@ -393,34 +320,30 @@ void task_motor_driver(void* argument)
         HAL_GPIO_WritePin(LED_LEFT_SLIP_DETECTED_GPIO_Port, LED_LEFT_SLIP_DETECTED_Pin, rear_left_slip_ratio > TARGET_SLIP_RATIO);
         HAL_GPIO_WritePin(LED_RIGHT_SLIP_DETECTED_GPIO_Port, LED_RIGHT_SLIP_DETECTED_Pin, rear_right_slip_ratio > TARGET_SLIP_RATIO);
 
-        uint32_t ticks_since_latest_timestamp = __HAL_TIM_GET_COUNTER(&TIM_ENCODERS) - encoder_buffer_front_right.last_timestamp;
-
-        bool perform_tc = system_state.tc_enabled
-            && front_right_filtered_delta_sum < TRACTION_CONTROL_TICK_THRESHOLD * front_right_filter_count
-            && ticks_since_latest_timestamp < TRACTION_CONTROL_TICK_THRESHOLD;
+        bool perform_tc = system_state.tc_enabled && front_right_rps > TRACTION_CONTROL_RPS_THRESHOLD;
 
         HAL_GPIO_WritePin(LED_TC_WORKING_GPIO_Port, LED_TC_WORKING_Pin, perform_tc);
+
+        float rear_left_pwm, rear_right_pwm;
 
         if (perform_tc) { // If TC is on and we have a recent valid measurement
             motor_pid_config.out_max = system_state.throttle;
 
-            float rear_left_pwm = pid_update(&motor_pid_config, &rear_left_pid_state, TARGET_SLIP_RATIO, rear_left_slip_ratio); // Assuming target slip is 0
-            float rear_right_pwm = pid_update(&motor_pid_config, &rear_right_pid_state, TARGET_SLIP_RATIO, rear_right_slip_ratio); // Assuming target slip is 0
-
-            set_motor_power(&motor_rear_left, rear_left_pwm);
-            set_motor_power(&motor_rear_right, rear_right_pwm);
-
-            system_state.log_data.rear_left_pwm = rear_left_pwm;
-            system_state.log_data.rear_right_pwm = rear_right_pwm;
+            float target_rear_rps = front_right_rps * (1.0f + TARGET_SLIP_RATIO);
+            rear_left_pwm = pid_update(&motor_pid_config, &rear_left_pid_state, target_rear_rps, rear_left_rps);
+            rear_right_pwm = pid_update(&motor_pid_config, &rear_right_pid_state, target_rear_rps, rear_right_rps);
         } else {
-            set_motor_power(&motor_rear_left, system_state.throttle);
-            set_motor_power(&motor_rear_right, system_state.throttle);
-
-            system_state.log_data.rear_left_pwm = system_state.throttle;
-            system_state.log_data.rear_right_pwm = system_state.throttle;
+            rear_left_pwm = system_state.throttle;
+            rear_right_pwm = system_state.throttle;
         }
 
-        debug_encoder(&encoder_buffer_rear_left, rear_left_filtered_delta_sum, rear_left_filter_count);
+        set_motor_power(&motor_rear_left, rear_left_pwm);
+        set_motor_power(&motor_rear_right, rear_right_pwm);
+
+        system_state.log_data.rear_left_pwm = rear_left_pwm;
+        system_state.log_data.rear_right_pwm = rear_right_pwm;
+
+        debug_encoder(&encoder_buffer_rear_left, rear_left_rps);
     }
 }
 
