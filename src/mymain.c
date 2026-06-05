@@ -327,6 +327,17 @@ uint32_t encoder_buffer_filtered_min(EncoderBuffer_t* buffer)
     return min;
 }
 
+void encoder_buffer_print_last_n_deltas(EncoderBuffer_t* buffer, uint32_t n)
+{
+    printf("Last %lu deltas (mean %lu): ", n, buffer->sum / ENCODER_BUFFER_SIZE);
+    uint32_t index = buffer->index;
+    for (uint32_t i = 0; i < n; i++) {
+        printf("%lu ", buffer->deltas[index]);
+        index = (index + ENCODER_BUFFER_SIZE - 1) % ENCODER_BUFFER_SIZE;
+    }
+    printf("\n");
+}
+
 void debug_encoder(EncoderBuffer_t* buffer, uint32_t filtered_delta_sum, uint32_t filter_count)
 {
     filter_count = filter_count > 0 ? filter_count : 1; // Avoid division by zero
