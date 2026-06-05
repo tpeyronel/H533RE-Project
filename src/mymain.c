@@ -517,7 +517,8 @@ void mymain()
     set_motor_forwards(&motor_rear_left);
     set_motor_forwards(&motor_rear_right);
 
-    HAL_TIM_PWM_Start(&TIM_PWM, TIM_CHANNEL_1 | TIM_CHANNEL_2);
+    HAL_TIM_PWM_Start(&TIM_PWM, motor_rear_left.enable_channel);
+    HAL_TIM_PWM_Start(&TIM_PWM, motor_rear_right.enable_channel);
     HAL_TIM_IC_Start_IT(&TIM_ENCODERS, ENCODER_CHANNEL_FRONT_RIGHT);
     HAL_TIM_IC_Start_IT(&TIM_ENCODERS, ENCODER_CHANNEL_REAR_LEFT);
     HAL_TIM_IC_Start_IT(&TIM_ENCODERS, ENCODER_CHANNEL_REAR_RIGHT);
