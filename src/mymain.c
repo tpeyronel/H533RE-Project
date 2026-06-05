@@ -30,7 +30,6 @@
 #define ENCODER_CHANNEL_REAR_LEFT TIM_CHANNEL_2
 #define ENCODER_CHANNEL_REAR_RIGHT TIM_CHANNEL_3
 
-#define TIM_ENCODERS htim2
 #define TIM_PWM htim3
 #define TIM_TRACTION_CONTROL htim7
 
@@ -403,9 +402,9 @@ void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef* htim)
 {
     /* Forward to IRQ handler for encoder timer if this callback is for that timer */
     if (htim == &TIM_ENCODERS || htim->Instance == TIM_ENCODERS.Instance) {
+        EncoderBuffer_t* buffer;
         uint32_t timestamp;
 
-        EncoderBuffer_t* buffer;
         switch (htim->Channel) {
         case ENCODER_ACTIVE_CHANNEL_FRONT_RIGHT:
             buffer = &encoder_buffer_front_right;
@@ -423,16 +422,16 @@ void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef* htim)
             return; // Not an encoder channel we're tracking
         }
 
-        buffer->index = (buffer->index + 1) % ENCODER_BUFFER_SIZE;
-        buffer->sum -= buffer->deltas[buffer->index]; // Remove the old value from the sum
-        buffer->deltas[buffer->index] = timestamp - buffer->last_timestamp; // This will correctly handle timer overflow due to unsigned arithmetic
-        buffer->sum += buffer->deltas[buffer->index]; // Add the new value to the sum
-        buffer->last_timestamp = timestamp;
+        encoder_buffer_handle_pulse(buffer, timestamp);
     }
 }
 
 void mymain()
 {
+    encoder_buffer_init(&encoder_buffer_front_right);
+    encoder_buffer_init(&encoder_buffer_rear_left);
+    encoder_buffer_init(&encoder_buffer_rear_right);
+
     message_queue = xQueueCreateStatic(MESSAGE_QUEUE_SIZE, sizeof(Message_t), (uint8_t*)(message_queues_storage_buffer), &message_queue_buffer);
     motor_driver_sem = xSemaphoreCreateBinaryStatic(&motor_driver_sem_buffer);
     xSemaphoreGive(motor_driver_sem);
