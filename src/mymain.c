@@ -86,6 +86,7 @@ typedef struct {
 typedef struct {
     float throttle;
     bool tc_enabled;
+    float cc_rps; // Cruise control target speed in RPS, 0 if cruise control is off
     LogData_t log_data; // For storing data to be sent in logs, updated by motor driver task and read by logging task
 } SystemState_t;
 
@@ -131,6 +132,7 @@ Motor_t motor_rear_right = {
 volatile SystemState_t system_state = {
     .throttle = 0.0f,
     .tc_enabled = true,
+    .cc_rps = 0.0f,
     .log_data = { 0 },
 };
 
@@ -320,15 +322,21 @@ void task_motor_driver(void* argument)
         HAL_GPIO_WritePin(LED_RIGHT_SLIP_DETECTED_GPIO_Port, LED_RIGHT_SLIP_DETECTED_Pin, rear_right_slip_ratio > TARGET_SLIP_RATIO);
 
         bool perform_tc = system_state.tc_enabled && front_right_rps > TRACTION_CONTROL_RPS_THRESHOLD;
+        bool cc_enabled = system_state.cc_rps > 0.0f;
 
         HAL_GPIO_WritePin(LED_TC_WORKING_GPIO_Port, LED_TC_WORKING_Pin, perform_tc);
 
         float rear_left_pwm, rear_right_pwm;
 
-        if (perform_tc) { // If TC is on and we have a recent valid measurement
-            motor_pid_config.out_max = system_state.throttle;
+        if (perform_tc || cc_enabled) { // If TC is on and we have a recent valid measurement, or if cruse control is active.
+            if (cc_enabled) {
+                motor_pid_config.out_max = 1.0f; // Allow full power in cruise control mode.
+            } else {
+                motor_pid_config.out_max = system_state.throttle;
+            }
 
-            float target_rear_rps = front_right_rps * (1.0f + TARGET_SLIP_RATIO);
+            float target_slip_rps = front_right_rps * (1.0f + TARGET_SLIP_RATIO);
+            float target_rear_rps = cc_enabled ? fminf(system_state.cc_rps, target_slip_rps) : target_slip_rps;
             rear_left_pwm = pid_update(&motor_pid_config, &rear_left_pid_state, target_rear_rps, rear_left_rps);
             rear_right_pwm = pid_update(&motor_pid_config, &rear_right_pid_state, target_rear_rps, rear_right_rps);
         } else {
