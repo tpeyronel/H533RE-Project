@@ -16,6 +16,8 @@
 #include "encoder_buffer.h"
 #include "protocol.h"
 
+#define CRUISE_CONTROL_RPS_STEP 0.1f
+
 #define RX_BUFFER_SIZE (4 * sizeof(Message_t))
 #define MESSAGE_QUEUE_SIZE 8
 
@@ -244,6 +246,25 @@ void process_message(Message_t* msg)
     case MSG_TYPE_TOGGLE_TC:
         printf("RX: Toggle TC\n");
         system_state.tc_enabled = !system_state.tc_enabled;
+        break;
+    case MSG_TYPE_TOGGLE_CC:
+        printf("RX: Toggle CC\n");
+        if (system_state.cc_rps > 0.0f) {
+            system_state.cc_rps = 0.0f; // Disable cruise control if it's currently enabled
+            printf("Cruise control disabled\n");
+        } else {
+            // Enable cruise control at current speed
+            system_state.cc_rps = encoder_buffer_compute_rps(&encoder_buffer_front_right);
+            printf("Cruise control enabled\n");
+        }
+        break;
+    case MSG_TYPE_INC_CC:
+        printf("RX: Increase CC\n");
+        system_state.cc_rps += CRUISE_CONTROL_RPS_STEP;
+        break;
+    case MSG_TYPE_DEC_CC:
+        printf("RX: Decrease CC\n");
+        system_state.cc_rps = fmaxf(0.0f, system_state.cc_rps - CRUISE_CONTROL_RPS_STEP);
         break;
     default:
         printf("RX: Unknown message type: %u\n", msg->type);
