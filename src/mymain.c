@@ -309,6 +309,11 @@ void debug_encoder(EncoderBuffer_t* buffer, float rps)
     }
 }
 
+bool is_full_throttle(void)
+{
+    return system_state.throttle >= 0.975f;
+}
+
 /*
  * Tasks
  */
@@ -343,7 +348,7 @@ void task_motor_driver(void* argument)
         HAL_GPIO_WritePin(LED_RIGHT_SLIP_DETECTED_GPIO_Port, LED_RIGHT_SLIP_DETECTED_Pin, rear_right_slip_ratio > TARGET_SLIP_RATIO);
 
         bool perform_tc = system_state.tc_enabled && front_right_rps > TRACTION_CONTROL_RPS_THRESHOLD;
-        bool cc_enabled = system_state.cc_rps > 0.0f;
+        bool cc_enabled = system_state.cc_rps > 0.0f && !is_full_throttle();
 
         HAL_GPIO_WritePin(LED_TC_WORKING_GPIO_Port, LED_TC_WORKING_Pin, perform_tc);
 
@@ -356,8 +361,11 @@ void task_motor_driver(void* argument)
                 motor_pid_config.out_max = system_state.throttle;
             }
 
-            float target_slip_rps = front_right_rps * (1.0f + TARGET_SLIP_RATIO);
-            float target_rear_rps = cc_enabled ? fminf(system_state.cc_rps, target_slip_rps) : target_slip_rps;
+            float target_tc_rps = perform_tc ? front_right_rps * (1.0f + TARGET_SLIP_RATIO) : 0.0f;
+            float target_rear_rps = (perform_tc && cc_enabled)
+                ? fminf(target_tc_rps, system_state.cc_rps)
+                : (perform_tc ? target_tc_rps : system_state.cc_rps);
+
             rear_left_pwm = pid_update(&motor_pid_config, &rear_left_pid_state, target_rear_rps, rear_left_rps);
             rear_right_pwm = pid_update(&motor_pid_config, &rear_right_pid_state, target_rear_rps, rear_right_rps);
         } else {
