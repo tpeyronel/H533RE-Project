@@ -8,6 +8,7 @@
 
 typedef struct {
     volatile uint32_t index; // Points to the last written timestamp.
+    volatile float filtered_delta_mean; // Exponentially weighted moving average of deltas for filtering
     volatile uint32_t deltas[ENCODER_BUFFER_SIZE];
     volatile uint32_t timestamps[ENCODER_BUFFER_SIZE];
 } EncoderBuffer_t;

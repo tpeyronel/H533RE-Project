@@ -10,6 +10,8 @@
 #define TIM_ENCODERS_FREQUENCY 16000000 // 16 MHz timer clock frequency
 #define ENCODER_PPR (100 * 1)
 
+#define FILTER_TIME_CONSTANT (1.0f / (0.1f * TIM_ENCODERS_FREQUENCY)) // Time constant for low-pass filter in encoder timer ticks
+
 #define SAMPLE_COUNT (ENCODER_BUFFER_SIZE / 2) // Number of samples to average for mean calculation, should be <= ENCODER_BUFFER_SIZE
 #define MAX_PULSE_AGE_MS 100 // Maximum number of ms to consider a pulse valid (to filter out old pulses when the wheel is stationary)
 #define MAX_PULSE_AGE_TICKS ((MAX_PULSE_AGE_MS * TIM_ENCODERS_FREQUENCY) / 1000)
@@ -22,6 +24,7 @@ static bool delta_filter(uint32_t delta, float mean)
 void encoder_buffer_init(EncoderBuffer_t* buffer)
 {
     buffer->index = 0;
+    buffer->filtered_delta_mean = 0.0f;
     for (uint32_t i = 0; i < ENCODER_BUFFER_SIZE; i++) {
         buffer->deltas[i] = 0;
         buffer->timestamps[i] = 0;
@@ -33,9 +36,14 @@ void encoder_buffer_handle_pulse(EncoderBuffer_t* buffer, uint32_t timestamp)
     uint32_t index = buffer->index;
     uint32_t next_index = (index + 1) % ENCODER_BUFFER_SIZE;
 
-    buffer->deltas[next_index] = timestamp - buffer->timestamps[index];
+    uint32_t delta = timestamp - buffer->timestamps[index];
+
+    float alpha = 1 - expf(-(float)(delta)*FILTER_TIME_CONSTANT);
+
+    buffer->deltas[next_index] = delta;
     buffer->timestamps[next_index] = timestamp;
     buffer->index = next_index;
+    buffer->filtered_delta_mean = alpha * (float)(delta) + (1 - alpha) * buffer->filtered_delta_mean;
 }
 
 float encoder_buffer_filtered_delta_mean(EncoderBuffer_t* buffer, float delta_mean)
@@ -47,7 +55,6 @@ float encoder_buffer_filtered_delta_mean(EncoderBuffer_t* buffer, float delta_me
 
     uint32_t index = buffer->index;
     for (uint32_t i = 0; i < SAMPLE_COUNT; i++) {
-
         uint32_t age_ticks = now - buffer->timestamps[index];
         if (age_ticks > MAX_PULSE_AGE_TICKS) {
             break; // Stop if the pulse is too old, implies wheel is stationary or very slow
@@ -77,8 +84,8 @@ float encoder_buffer_unfiltered_delta_mean(EncoderBuffer_t* buffer)
 
 float encoder_buffer_compute_rps(EncoderBuffer_t* buffer)
 {
-    float unfiltered_mean = encoder_buffer_unfiltered_delta_mean(buffer);
-    float filtered_mean = encoder_buffer_filtered_delta_mean(buffer, unfiltered_mean);
+    float filtered_mean = buffer->filtered_delta_mean;
+    // float filtered_mean = encoder_buffer_filtered_delta_mean(buffer, encoder_buffer_unfiltered_delta_mean(buffer));
 
     if (filtered_mean == 0.0f) {
         return 0.0f; // Mean == 0.0f means no valid measurements, implies stationary wheel.
