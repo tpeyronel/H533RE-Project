@@ -1,0 +1,1 @@
+pandoc .\entrega1.md --pdf-engine=xelatex -o entrega1.pdf
