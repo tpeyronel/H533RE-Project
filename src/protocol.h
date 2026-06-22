@@ -8,6 +8,7 @@ enum MessageType : uint8_t {
     MSG_TYPE_TOGGLE_CC = 2,
     MSG_TYPE_INC_CC = 3,
     MSG_TYPE_DEC_CC = 4,
+    MSG_TYPE_SET_MOTOR_PID_CONFIG = 5,
 };
 
 struct MessageSetThrottle {
@@ -31,6 +32,14 @@ struct MessageDecCc {
     enum MessageType type;
 } __attribute__((packed));
 
+struct MessageSetMotorPidConfig {
+    enum MessageType type;
+    uint8_t motor_id;
+    float Kp;
+    float Ki;
+    float Kd;
+} __attribute__((packed));
+
 typedef union {
     enum MessageType type;
     struct MessageSetThrottle set_throttle;
@@ -38,6 +47,7 @@ typedef union {
     struct MessageToggleCc toggle_cc;
     struct MessageIncCc inc_cc;
     struct MessageDecCc dec_cc;
+    struct MessageSetMotorPidConfig set_motor_pid_config;
 } __attribute__((packed)) Message_t;
 
 #define MESSAGE_SIZE sizeof(Message_t)

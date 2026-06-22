@@ -260,6 +260,25 @@ void process_message(Message_t* msg)
         printf("RX: Decrease CC speed\n");
         system_state.cc_rps = fmaxf(0.0f, system_state.cc_rps - CRUISE_CONTROL_RPS_STEP);
         break;
+    case MSG_TYPE_SET_MOTOR_PID_CONFIG:
+        printf("RX: Updated motor PID config for motor %u\n", msg->set_motor_pid_config.motor_id);
+
+        PidControllerConfig_t* pid_config;
+
+        switch (msg->set_motor_pid_config.motor_id) {
+        case 0:
+        case 1:
+            pid_config = &motor_pid_config; // Assuming we have only one PID config for both motors for simplicity. Extend as needed.
+            break;
+        default:
+            printf("RX: Invalid motor ID in PID config message: %u\n", msg->set_motor_pid_config.motor_id);
+            return;
+        }
+
+        pid_config->Kp = msg->set_motor_pid_config.Kp;
+        pid_config->Ki = msg->set_motor_pid_config.Ki;
+        pid_config->Kd = msg->set_motor_pid_config.Kd;
+        break;
     default:
         printf("RX: Unknown message type: %u\n", msg->type);
         break;
@@ -359,8 +378,8 @@ void task_motor_driver(void* argument)
             float target_rear_rps = (perform_tc && cc_enabled)
                 ? fminf(target_tc_rps, system_state.cc_rps)
                 : (perform_tc
-                    ? target_tc_rps
-                    : system_state.cc_rps);
+                          ? target_tc_rps
+                          : system_state.cc_rps);
 
             rear_left_pwm = pid_update(&motor_pid_config, &rear_left_pid_state, target_rear_rps, rear_left_rps);
             rear_right_pwm = pid_update(&motor_pid_config, &rear_right_pid_state, target_rear_rps, rear_right_rps);
