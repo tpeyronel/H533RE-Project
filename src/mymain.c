@@ -208,10 +208,7 @@ float pid_update(PidControllerConfig_t* pidc, PidControllerState_t* pids, float 
     pids->integrator += 0.5f * pidc->Ki * pidc->T * (error + pids->prev_error);
 
     // Anti-windup: Clamp the integrator to prevent "runaway"
-    if (pids->integrator > pidc->out_max)
-        pids->integrator = pidc->out_max;
-    else if (pids->integrator < pidc->out_min)
-        pids->integrator = pidc->out_min;
+    pids->integrator = fclampf(pids->integrator, pidc->out_min, pidc->out_max);
 
     // 4. Derivative term (Band-limited differentiation)
     // Using measurement instead of error avoids "derivative kick" on setpoint changes
