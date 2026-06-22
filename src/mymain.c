@@ -361,7 +361,7 @@ void task_motor_driver(void* argument)
                 motor_pid_config.out_max = system_state.throttle;
             }
 
-            float target_tc_rps = perform_tc ? front_right_rps * (1.0f + TARGET_SLIP_RATIO) : 0.0f;
+            float target_tc_rps = front_right_rps * (1.0f + TARGET_SLIP_RATIO);
             float target_rear_rps = (perform_tc && cc_enabled)
                 ? fminf(target_tc_rps, system_state.cc_rps)
                 : (perform_tc ? target_tc_rps : system_state.cc_rps);
