@@ -191,12 +191,9 @@ void set_motor_brake(Motor_t* motor)
 
 void set_motor_power(Motor_t* motor, float pwm /* 0.0 to 1.0*/)
 {
-    if (pwm < 0.0f)
-        pwm = 0.0f;
-    else if (pwm > 1.0f)
-        pwm = 1.0f;
+    uint32_t compare = (uint32_t)(fclampf(pwm, 0.0f, 1.0f) * MOTOR_MAX_PWM_VALUE);
 
-    __HAL_TIM_SET_COMPARE(&TIM_PWM, motor->enable_channel, (uint32_t)(pwm * MOTOR_MAX_PWM_VALUE));
+    __HAL_TIM_SET_COMPARE(&TIM_PWM, motor->enable_channel, compare);
 }
 
 float pid_update(PidControllerConfig_t* pidc, PidControllerState_t* pids, float setpoint, float measurement)
