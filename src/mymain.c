@@ -83,6 +83,8 @@ typedef struct {
     float rear_right_slip_ratio;
     float rear_left_pwm;
     float rear_right_pwm;
+    float rear_left_rps_ratio;
+    float rear_right_rps_ratio;
 } LogData_t;
 
 typedef struct {
@@ -381,6 +383,9 @@ void task_motor_driver(void* argument)
                           ? target_tc_rps
                           : system_state.cc_rps);
 
+            system_state.log_data.rear_left_rps_ratio = rear_left_rps / target_rear_rps;
+            system_state.log_data.rear_right_rps_ratio = rear_right_rps / target_rear_rps;
+
             rear_left_pwm = pid_update(&motor_pid_config, &rear_left_pid_state, target_rear_rps, rear_left_rps);
             rear_right_pwm = pid_update(&motor_pid_config, &rear_right_pid_state, target_rear_rps, rear_right_rps);
         } else {
@@ -400,7 +405,7 @@ void task_motor_driver(void* argument)
 
 void task_logging(void* argument)
 {
-    TickType_t xTimeIncrement = pdMS_TO_TICKS(25);
+    TickType_t xTimeIncrement = pdMS_TO_TICKS(50);
     TickType_t pxPreviousWakeTime = xTaskGetTickCount();
 
     for (;;) {
@@ -414,6 +419,8 @@ void task_logging(void* argument)
             .rear_right_pwm = (uint8_t)(system_state.log_data.rear_right_pwm * 255.0f),
             .rear_left_slip = (uint8_t)(rear_left_slip_ratio_clamped * 255.0f),
             .rear_right_slip = (uint8_t)(rear_right_slip_ratio_clamped * 255.0f),
+            .rear_left_rps_ratio = (uint8_t)(fclampf(system_state.log_data.rear_left_rps_ratio, 0.0f, 2.0f) * 127.5f),
+            .rear_right_rps_ratio = (uint8_t)(fclampf(system_state.log_data.rear_right_rps_ratio, 0.0f, 2.0f) * 127.5f),
         };
 
         MessageOut_t msg_out_union = { 0 };

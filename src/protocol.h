@@ -63,6 +63,8 @@ struct MessageOutLog {
     uint8_t rear_right_pwm; // 0.0 to 1.0
     uint8_t rear_left_slip; // 0-255 representing 0.0 to 1.0 slip ratio (clamped)
     uint8_t rear_right_slip;
+    uint8_t rear_left_rps_ratio; // 0-255 representing 0.0 to 2.0 ratio of current RPS to target RPS (clamped)
+    uint8_t rear_right_rps_ratio;
 } __attribute__((packed));
 
 typedef union {
