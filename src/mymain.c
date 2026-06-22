@@ -364,7 +364,9 @@ void task_motor_driver(void* argument)
             float target_tc_rps = front_right_rps * (1.0f + TARGET_SLIP_RATIO);
             float target_rear_rps = (perform_tc && cc_enabled)
                 ? fminf(target_tc_rps, system_state.cc_rps)
-                : (perform_tc ? target_tc_rps : system_state.cc_rps);
+                : (perform_tc
+                    ? target_tc_rps
+                    : system_state.cc_rps);
 
             rear_left_pwm = pid_update(&motor_pid_config, &rear_left_pid_state, target_rear_rps, rear_left_rps);
             rear_right_pwm = pid_update(&motor_pid_config, &rear_right_pid_state, target_rear_rps, rear_right_rps);
