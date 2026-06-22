@@ -253,11 +253,11 @@ void process_message(Message_t* msg)
         }
         break;
     case MSG_TYPE_INC_CC:
-        printf("RX: Increase CC\n");
+        printf("RX: Increase CC speed\n");
         system_state.cc_rps += CRUISE_CONTROL_RPS_STEP;
         break;
     case MSG_TYPE_DEC_CC:
-        printf("RX: Decrease CC\n");
+        printf("RX: Decrease CC speed\n");
         system_state.cc_rps = fmaxf(0.0f, system_state.cc_rps - CRUISE_CONTROL_RPS_STEP);
         break;
     default:
