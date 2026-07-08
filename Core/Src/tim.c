@@ -68,10 +68,10 @@ void MX_TIM2_Init(void)
   {
     Error_Handler();
   }
-  sConfigIC.ICPolarity = TIM_INPUTCHANNELPOLARITY_RISING;
+  sConfigIC.ICPolarity = TIM_INPUTCHANNELPOLARITY_BOTHEDGE;
   sConfigIC.ICSelection = TIM_ICSELECTION_DIRECTTI;
   sConfigIC.ICPrescaler = TIM_ICPSC_DIV1;
-  sConfigIC.ICFilter = 0;
+  sConfigIC.ICFilter = 2;
   if (HAL_TIM_IC_ConfigChannel(&htim2, &sConfigIC, TIM_CHANNEL_1) != HAL_OK)
   {
     Error_Handler();
@@ -81,6 +81,10 @@ void MX_TIM2_Init(void)
     Error_Handler();
   }
   if (HAL_TIM_IC_ConfigChannel(&htim2, &sConfigIC, TIM_CHANNEL_3) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (HAL_TIM_IC_ConfigChannel(&htim2, &sConfigIC, TIM_CHANNEL_4) != HAL_OK)
   {
     Error_Handler();
   }
@@ -197,9 +201,10 @@ void HAL_TIM_Base_MspInit(TIM_HandleTypeDef* tim_baseHandle)
     /**TIM2 GPIO Configuration
     PA1     ------> TIM2_CH2
     PA2     ------> TIM2_CH3
+    PA3     ------> TIM2_CH4
     PA5     ------> TIM2_CH1
     */
-    GPIO_InitStruct.Pin = ENC_B_Pin|ENC_C_Pin|ENC_A_Pin;
+    GPIO_InitStruct.Pin = ENC_B_Pin|ENC_C_Pin|ENC_D_Pin|ENC_A_Pin;
     GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
     GPIO_InitStruct.Pull = GPIO_NOPULL;
     GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
@@ -283,9 +288,10 @@ void HAL_TIM_Base_MspDeInit(TIM_HandleTypeDef* tim_baseHandle)
     /**TIM2 GPIO Configuration
     PA1     ------> TIM2_CH2
     PA2     ------> TIM2_CH3
+    PA3     ------> TIM2_CH4
     PA5     ------> TIM2_CH1
     */
-    HAL_GPIO_DeInit(GPIOA, ENC_B_Pin|ENC_C_Pin|ENC_A_Pin);
+    HAL_GPIO_DeInit(GPIOA, ENC_B_Pin|ENC_C_Pin|ENC_D_Pin|ENC_A_Pin);
 
     /* TIM2 interrupt Deinit */
     HAL_NVIC_DisableIRQ(TIM2_IRQn);
