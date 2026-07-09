@@ -5,6 +5,7 @@
 #include "projdefs.h"
 #include "semphr.h"
 #include "stm32h5xx_hal.h"
+#include "stm32h5xx_hal_gpio.h"
 #include "stm32h5xx_hal_tim.h"
 #include "task.h"
 #include "tim.h"
@@ -53,6 +54,13 @@ typedef enum {
     MODE_DEBUG,
 } SystemMode_t;
 
+typedef enum {
+    MOTOR_DIRECTION_FORWARDS,
+    MOTOR_DIRECTION_BACKWARDS,
+    MOTOR_DIRECTION_COAST,
+    MOTOR_DIRECTION_BRAKE,
+} MotorDirection_t;
+
 typedef struct {
     GPIO_TypeDef* port;
     uint16_t pin;
@@ -86,20 +94,11 @@ typedef struct {
 } Motor_t;
 
 typedef struct {
-    float rear_left_slip_ratio;
-    float rear_right_slip_ratio;
-    float rear_left_pwm;
-    float rear_right_pwm;
-    float rear_left_rps_ratio;
-    float rear_right_rps_ratio;
-} LogData_t;
-
-typedef struct {
     SystemMode_t mode;
     float throttle;
     bool tc_enabled;
     float cc_rps; // Cruise control target speed in RPS, 0 if cruise control is off
-    LogData_t log_data; // For storing data to be sent in logs, updated by motor driver task and read by logging task
+    struct MessageOutLogPayload log_data;
 } SystemState_t;
 
 EncoderBuffer_t encoder_buffer_front_right = { 0 };
@@ -128,14 +127,14 @@ PidControllerState_t rear_right_pid_state = {
     .prev_measurement = 0.0f,
 };
 
-Motor_t motor_rear_left = {
+const Motor_t rear_left_motor = {
     .enable_channel = TIM_CHANNEL_1,
     .enable = { MOTOR_A_ENB_GPIO_Port, MOTOR_A_ENB_Pin },
     .control1 = { MOTOR_A_IN1_GPIO_Port, MOTOR_A_IN1_Pin },
     .control2 = { MOTOR_A_IN2_GPIO_Port, MOTOR_A_IN2_Pin },
 };
 
-Motor_t motor_rear_right = {
+const Motor_t rear_right_motor = {
     .enable_channel = TIM_CHANNEL_2,
     .enable = { MOTOR_B_ENB_GPIO_Port, MOTOR_B_ENB_Pin },
     .control1 = { MOTOR_B_IN1_GPIO_Port, MOTOR_B_IN1_Pin },
@@ -177,34 +176,38 @@ float fclampf(float value, float min, float max)
         return value;
 }
 
-void set_motor_forwards(Motor_t* motor)
+void set_motor_direction(const Motor_t* motor, MotorDirection_t direction)
 {
-    HAL_GPIO_WritePin(motor->control1.port, motor->control1.pin, GPIO_PIN_SET);
-    HAL_GPIO_WritePin(motor->control2.port, motor->control2.pin, GPIO_PIN_RESET);
+    GPIO_PinState control1_state, control2_state;
+
+    switch (direction) {
+    case MOTOR_DIRECTION_FORWARDS:
+        control1_state = GPIO_PIN_SET;
+        control2_state = GPIO_PIN_RESET;
+        break;
+    case MOTOR_DIRECTION_BACKWARDS:
+        control1_state = GPIO_PIN_RESET;
+        control2_state = GPIO_PIN_SET;
+        break;
+    case MOTOR_DIRECTION_COAST:
+        control1_state = GPIO_PIN_RESET;
+        control2_state = GPIO_PIN_RESET;
+        break;
+    case MOTOR_DIRECTION_BRAKE:
+        control1_state = GPIO_PIN_SET;
+        control2_state = GPIO_PIN_SET;
+        break;
+    }
+
+    HAL_GPIO_WritePin(motor->control1.port, motor->control1.pin, control1_state);
+    HAL_GPIO_WritePin(motor->control2.port, motor->control2.pin, control2_state);
 }
 
-void set_motor_backwards(Motor_t* motor)
+void set_motor_power(const Motor_t* motor, float pwm /* 0.0 to 1.0*/)
 {
-    HAL_GPIO_WritePin(motor->control1.port, motor->control1.pin, GPIO_PIN_RESET);
-    HAL_GPIO_WritePin(motor->control2.port, motor->control2.pin, GPIO_PIN_SET);
-}
+    pwm = fclampf(pwm, 0.0f, 1.0f);
 
-void set_motor_coast(Motor_t* motor)
-{
-    HAL_GPIO_WritePin(motor->control1.port, motor->control1.pin, GPIO_PIN_RESET);
-    HAL_GPIO_WritePin(motor->control2.port, motor->control2.pin, GPIO_PIN_RESET);
-}
-
-void set_motor_brake(Motor_t* motor)
-{
-    HAL_GPIO_WritePin(motor->control1.port, motor->control1.pin, GPIO_PIN_SET);
-    HAL_GPIO_WritePin(motor->control2.port, motor->control2.pin, GPIO_PIN_SET);
-}
-
-void set_motor_power(Motor_t* motor, float pwm /* 0.0 to 1.0*/)
-{
-    uint32_t compare = (uint32_t)(fclampf(pwm, 0.0f, 1.0f) * MOTOR_MAX_PWM_VALUE);
-
+    uint32_t compare = (uint32_t)(pwm * MOTOR_MAX_PWM_VALUE);
     __HAL_TIM_SET_COMPARE(&TIM_PWM, motor->enable_channel, compare);
 }
 
@@ -297,43 +300,6 @@ void process_message(Message_t* msg)
     }
 }
 
-void debug_encoder(EncoderBuffer_t* buffer, float rps)
-{
-    // printf("rpm: %u, mean: %u, std: %u, max: %u, min: %u, c: %u\n",
-    //     (uint32_t)(rps * 60.0f),
-    //     (uint32_t)(filtered_delta_sum / (filter_count ? filter_count : 1)),
-    //     (uint32_t)(encoder_buffer_filtered_std(buffer, filtered_delta_sum / (filter_count ? filter_count : 1))),
-    //     (uint32_t)(encoder_buffer_filtered_max(buffer)),
-    //     (uint32_t)(encoder_buffer_filtered_min(buffer)),
-    //     filter_count);
-
-    // printf("%u\n", system_state.log_data.rear_left_pwm);
-
-    // printf("delta sum: %lu\n", rear_left_delta_sum);
-    float target_rps = 100.0f / 60.0f + (5900.0f / 60.0f) * system_state.throttle; // Example: 100 RPM at 0% throttle, 6000 RPM at 100% throttle
-
-    float pwm = pid_update(&motor_pid_config, &rear_left_pid_state, target_rps, rps);
-
-    set_motor_power(&motor_rear_left, pwm);
-    // set_motor_power(&motor_rear_left, 1.0f);
-    // set_motor_power(&motor_rear_left, system_state.throttle);
-
-    static uint32_t last_print = 0;
-    uint32_t now = xTaskGetTickCount();
-    if (now - last_print >= pdMS_TO_TICKS(100)) {
-        last_print = now;
-        // printf("rpm: %u, mean: %u, std: %u, max: %u, min: %u, c: %u\n",
-        // (uint32_t)(rps * 60.0f),
-        // (uint32_t)(filtered_delta_sum / (filter_count ? filter_count : 1)),
-        // (uint32_t)(encoder_buffer_filtered_std(buffer, filtered_delta_sum / (filter_count ? filter_count : 1))),
-        // (uint32_t)(encoder_buffer_filtered_max(buffer)),
-        // (uint32_t)(encoder_buffer_filtered_min(buffer)),
-        // filter_count);
-        // printf("RPM: %u, Setpoint: %u, PWM: %u\n", (uint32_t)(rps * 60.0f), (uint32_t)(setpoint * 60.0f), (uint32_t)(pwm * 100.0f));
-        encoder_buffer_print_last_n_deltas(buffer, 24);
-    }
-}
-
 bool is_full_throttle(void)
 {
     return system_state.throttle >= 0.975f;
@@ -342,21 +308,31 @@ bool is_full_throttle(void)
 void normal_mode_body()
 {
     float front_right_rps = encoder_buffer_compute_rps(&encoder_buffer_front_right);
+    float front_left_rps = encoder_buffer_compute_rps(&encoder_buffer_front_left);
     float rear_left_rps = encoder_buffer_compute_rps(&encoder_buffer_rear_left);
     float rear_right_rps = encoder_buffer_compute_rps(&encoder_buffer_rear_right);
-    float rear_left_slip_ratio = (rear_left_rps / front_right_rps) - 1.0f;
-    float rear_right_slip_ratio = (rear_right_rps / front_right_rps) - 1.0f;
 
-    system_state.log_data.rear_left_slip_ratio = rear_left_slip_ratio;
-    system_state.log_data.rear_right_slip_ratio = rear_right_slip_ratio;
+    system_state.log_data.throttle = system_state.throttle;
+    system_state.log_data.front_right_rpm = fclampf(front_right_rps * 60.0f, 0.0f, 255.0f);
+    system_state.log_data.front_left_rpm = fclampf(front_left_rps * 60.0f, 0.0f, 255.0f);
+    system_state.log_data.rear_left_rpm = fclampf(rear_left_rps * 60.0f, 0.0f, 255.0f);
+    system_state.log_data.rear_right_rpm = fclampf(rear_right_rps * 60.0f, 0.0f, 255.0f);
 
-    HAL_GPIO_WritePin(LED_TC_ENABLED_GPIO_Port, LED_TC_ENABLED_Pin, system_state.tc_enabled);
-    HAL_GPIO_WritePin(LED_LEFT_SLIP_DETECTED_GPIO_Port, LED_LEFT_SLIP_DETECTED_Pin, rear_left_slip_ratio > TARGET_SLIP_RATIO);
-    HAL_GPIO_WritePin(LED_RIGHT_SLIP_DETECTED_GPIO_Port, LED_RIGHT_SLIP_DETECTED_Pin, rear_right_slip_ratio > TARGET_SLIP_RATIO);
+    float real_rps = fmaxf(rear_left_rps, rear_right_rps);
 
-    bool perform_tc = system_state.tc_enabled && front_right_rps > TRACTION_CONTROL_RPS_THRESHOLD;
+    float rear_left_slip_ratio = (rear_left_rps / real_rps) - 1.0f;
+    float rear_right_slip_ratio = (rear_right_rps / real_rps) - 1.0f;
+
+    bool rear_left_slip_detected = real_rps > 0.0f && rear_left_slip_ratio > TARGET_SLIP_RATIO;
+    bool rear_right_slip_detected = real_rps > 0.0f && rear_right_slip_ratio > TARGET_SLIP_RATIO;
+
+    bool perform_tc = system_state.tc_enabled && real_rps > TRACTION_CONTROL_RPS_THRESHOLD;
     bool cc_enabled = system_state.cc_rps > 0.0f && !is_full_throttle();
 
+    // Status LEDs
+    HAL_GPIO_WritePin(LED_TC_ENABLED_GPIO_Port, LED_TC_ENABLED_Pin, system_state.tc_enabled);
+    HAL_GPIO_WritePin(LED_LEFT_SLIP_DETECTED_GPIO_Port, LED_LEFT_SLIP_DETECTED_Pin, rear_left_slip_detected);
+    HAL_GPIO_WritePin(LED_RIGHT_SLIP_DETECTED_GPIO_Port, LED_RIGHT_SLIP_DETECTED_Pin, rear_right_slip_detected);
     HAL_GPIO_WritePin(LED_TC_WORKING_GPIO_Port, LED_TC_WORKING_Pin, perform_tc);
 
     float rear_left_pwm, rear_right_pwm;
@@ -368,66 +344,73 @@ void normal_mode_body()
             motor_pid_config.out_max = system_state.throttle;
         }
 
-        float target_tc_rps = front_right_rps * (1.0f + TARGET_SLIP_RATIO);
+        float target_tc_rps = real_rps * (1.0f + TARGET_SLIP_RATIO);
         float target_rear_rps = (perform_tc && cc_enabled)
             ? fminf(target_tc_rps, system_state.cc_rps)
             : (perform_tc
                       ? target_tc_rps
                       : system_state.cc_rps);
 
-        system_state.log_data.rear_left_rps_ratio = rear_left_rps / target_rear_rps;
-        system_state.log_data.rear_right_rps_ratio = rear_right_rps / target_rear_rps;
+        system_state.log_data.rear_left_target_rpm = fclampf(target_rear_rps * 60.0f, 0.0f, 255.0f);
+        system_state.log_data.rear_right_target_rpm = fclampf(target_rear_rps * 60.0f, 0.0f, 255.0f);
 
         rear_left_pwm = pid_update(&motor_pid_config, &rear_left_pid_state, target_rear_rps, rear_left_rps);
         rear_right_pwm = pid_update(&motor_pid_config, &rear_right_pid_state, target_rear_rps, rear_right_rps);
     } else {
+        system_state.log_data.rear_left_target_rpm = 0;
+        system_state.log_data.rear_right_target_rpm = 0;
+
         rear_left_pwm = system_state.throttle;
         rear_right_pwm = system_state.throttle;
     }
 
-    set_motor_power(&motor_rear_left, rear_left_pwm);
-    set_motor_power(&motor_rear_right, rear_right_pwm);
+    set_motor_power(&rear_left_motor, rear_left_pwm);
+    set_motor_power(&rear_right_motor, rear_right_pwm);
 
     system_state.log_data.rear_left_pwm = rear_left_pwm;
     system_state.log_data.rear_right_pwm = rear_right_pwm;
-
-    debug_encoder(&encoder_buffer_rear_left, rear_left_rps);
 }
 
 void debug_mode_body()
 {
-    float rps = encoder_buffer_compute_rps(&encoder_buffer_rear_left);
+    EncoderBuffer_t* buffer = &encoder_buffer_rear_left;
+    PidControllerState_t* pid_state = &rear_left_pid_state;
+    const Motor_t* motor = &rear_left_motor;
 
-    // float pwm = pid_update(&motor_pid_config, &rear_left_pid_state, 250.0f / 60.0f, rps);
-    // set_motor_power(&motor_rear_left, pwm);
+    float rps = encoder_buffer_compute_rps(buffer);
 
-    set_motor_power(&motor_rear_left, 1.0f);
+    // float pwm = pid_update(&motor_pid_config, &pid_state, 250.0f / 60.0f, rps);
+    float pwm = 1.0;
+
+    set_motor_power(motor, pwm);
+
+    system_state.log_data.rear_left_pwm = pwm;
 
     static uint32_t last_print = 0;
     if (xTaskGetTickCount() - last_print >= pdMS_TO_TICKS(250)) {
         last_print = xTaskGetTickCount();
-        DeltaStats_t stats = encoder_buffer_compute_stats(&encoder_buffer_rear_left);
+        DeltaStats_t stats = encoder_buffer_compute_stats(buffer);
 
-        printf("rpm: %u\tewma: %u\tsma: %u\tstd: %u\tmax: %u\tmin: %u\n",
+        printf("rpm: %lu\tewma: %lu\tsma: %lu\tstd: %lu\tmax: %lu\tmin: %lu\n",
             (uint32_t)(rps * 60.0f),
-            (uint32_t)(encoder_buffer_rear_left.delta_ewma),
+            (uint32_t)(buffer->delta_ewma),
             (uint32_t)(stats.sma),
             (uint32_t)(stats.std),
             stats.max,
             stats.min);
-        printf("[A]\tsma: %u\tstd: %u\tmax: %u\tmin: %u\n",
+        printf("[A]\tsma: %lu\tstd: %lu\tmax: %lu\tmin: %lu\n",
             (uint32_t)(stats.sma_a),
             (uint32_t)(stats.std_a),
             stats.max_a,
             stats.min_a);
-        printf("[B]\tsma: %u\tstd: %u\tmax: %u\tmin: %u\n",
+        printf("[B]\tsma: %lu\tstd: %lu\tmax: %lu\tmin: %lu\n",
             (uint32_t)(stats.sma_b),
             (uint32_t)(stats.std_b),
             stats.max_b,
             stats.min_b);
         printf("\n");
 
-        // encoder_buffer_print_last_n_deltas(&encoder_buffer_rear_left, 128);
+        // encoder_buffer_print_last_n_deltas(buffer, 128);
     }
 }
 
@@ -464,30 +447,14 @@ void task_motor_driver(void* argument)
 
 void task_logging(void* argument)
 {
-    TickType_t xTimeIncrement = pdMS_TO_TICKS(50);
-    TickType_t pxPreviousWakeTime = xTaskGetTickCount();
-
     for (;;) {
-        float rear_left_slip_ratio_clamped = fclampf(system_state.log_data.rear_left_slip_ratio, 0.0f, 1.0f);
-        float rear_right_slip_ratio_clamped = fclampf(system_state.log_data.rear_right_slip_ratio, 0.0f, 1.0f);
-
-        struct MessageOutLog msg_out = {
+        MessageOut_t msg_out = {
+            .sof = START_OF_FRAME_MARKER,
             .type = MSG_OUT_TYPE_LOG,
-            .throttle = (uint8_t)(system_state.throttle * 255.0f),
-            .rear_left_pwm = (uint8_t)(system_state.log_data.rear_left_pwm * 255.0f),
-            .rear_right_pwm = (uint8_t)(system_state.log_data.rear_right_pwm * 255.0f),
-            .rear_left_slip = (uint8_t)(rear_left_slip_ratio_clamped * 255.0f),
-            .rear_right_slip = (uint8_t)(rear_right_slip_ratio_clamped * 255.0f),
-            .rear_left_rps_ratio = (uint8_t)(fclampf(system_state.log_data.rear_left_rps_ratio, 0.0f, 2.0f) * 127.5f),
-            .rear_right_rps_ratio = (uint8_t)(fclampf(system_state.log_data.rear_right_rps_ratio, 0.0f, 2.0f) * 127.5f),
+            .payload.log = system_state.log_data,
         };
 
-        MessageOut_t msg_out_union = { 0 };
-        msg_out_union.log = msg_out;
-
-        HAL_UART_Transmit(&huart5, (uint8_t*)(&msg_out_union), MESSAGE_OUT_SIZE, HAL_MAX_DELAY);
-
-        xTaskDelayUntil(&pxPreviousWakeTime, xTimeIncrement);
+        HAL_UART_Transmit(&huart5, (uint8_t*)(&msg_out), MESSAGE_OUT_SIZE, HAL_MAX_DELAY);
     }
 }
 
@@ -559,11 +526,11 @@ void mymain()
     motor_driver_sem = xSemaphoreCreateBinaryStatic(&motor_driver_sem_buffer);
     xSemaphoreGive(motor_driver_sem);
 
-    set_motor_forwards(&motor_rear_left);
-    set_motor_forwards(&motor_rear_right);
+    set_motor_direction(&rear_left_motor, MOTOR_DIRECTION_FORWARDS);
+    set_motor_direction(&rear_right_motor, MOTOR_DIRECTION_FORWARDS);
 
-    HAL_TIM_PWM_Start(&TIM_PWM, motor_rear_left.enable_channel);
-    HAL_TIM_PWM_Start(&TIM_PWM, motor_rear_right.enable_channel);
+    HAL_TIM_PWM_Start(&TIM_PWM, rear_left_motor.enable_channel);
+    HAL_TIM_PWM_Start(&TIM_PWM, rear_right_motor.enable_channel);
     HAL_TIM_IC_Start_IT(&TIM_ENCODERS, ENCODER_CHANNEL_FRONT_RIGHT);
     HAL_TIM_IC_Start_IT(&TIM_ENCODERS, ENCODER_CHANNEL_FRONT_LEFT);
     HAL_TIM_IC_Start_IT(&TIM_ENCODERS, ENCODER_CHANNEL_REAR_RIGHT);

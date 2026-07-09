@@ -52,24 +52,41 @@ typedef union {
 
 #define MESSAGE_SIZE sizeof(Message_t)
 
+#pragma pack(push, 1)
+
 enum MessageOutType : uint8_t {
     MSG_OUT_TYPE_LOG = 0,
 };
 
-struct MessageOutLog {
-    enum MessageOutType type;
-    uint8_t throttle; // 0.0 to 1.0
-    uint8_t rear_left_pwm; // 0.0 to 1.0
-    uint8_t rear_right_pwm; // 0.0 to 1.0
-    uint8_t rear_left_slip; // 0-255 representing 0.0 to 1.0 slip ratio (clamped)
-    uint8_t rear_right_slip;
-    uint8_t rear_left_rps_ratio; // 0-255 representing 0.0 to 2.0 ratio of current RPS to target RPS (clamped)
-    uint8_t rear_right_rps_ratio;
-} __attribute__((packed));
+struct MessageOutLogPayload {
+    // 0.0 to 1.0
+    uint8_t throttle;
 
-typedef union {
+    // 0 RPM to 255 RPM
+    uint8_t front_right_rpm;
+    uint8_t front_left_rpm;
+    uint8_t rear_right_rpm;
+    uint8_t rear_left_rpm;
+    uint8_t rear_right_target_rpm;
+    uint8_t rear_left_target_rpm;
+
+    // 0.0 to 1.0
+    uint8_t rear_left_pwm;
+    uint8_t rear_right_pwm;
+};
+
+union MessageOutPayload {
+    struct MessageOutLogPayload log;
+};
+
+#define START_OF_FRAME_MARKER 0xAA
+
+typedef struct {
+    uint8_t sof;
     enum MessageOutType type;
-    struct MessageOutLog log;
-} __attribute__((packed)) MessageOut_t;
+    union MessageOutPayload payload;
+} MessageOut_t;
 
 #define MESSAGE_OUT_SIZE sizeof(MessageOut_t)
+
+#pragma pack(pop)
