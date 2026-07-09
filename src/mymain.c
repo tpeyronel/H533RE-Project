@@ -48,6 +48,11 @@
 
 #define TARGET_SLIP_RATIO 0.05f // Example target slip ratio (5%)
 
+typedef enum {
+    MODE_NORMAL,
+    MODE_DEBUG,
+} SystemMode_t;
+
 typedef struct {
     GPIO_TypeDef* port;
     uint16_t pin;
@@ -90,6 +95,7 @@ typedef struct {
 } LogData_t;
 
 typedef struct {
+    SystemMode_t mode;
     float throttle;
     bool tc_enabled;
     float cc_rps; // Cruise control target speed in RPS, 0 if cruise control is off
@@ -137,6 +143,7 @@ Motor_t motor_rear_right = {
 };
 
 volatile SystemState_t system_state = {
+    .mode = MODE_NORMAL,
     .throttle = 0.0f,
     .tc_enabled = true,
     .cc_rps = 0.0f,
@@ -332,6 +339,98 @@ bool is_full_throttle(void)
     return system_state.throttle >= 0.975f;
 }
 
+void normal_mode_body()
+{
+    float front_right_rps = encoder_buffer_compute_rps(&encoder_buffer_front_right);
+    float rear_left_rps = encoder_buffer_compute_rps(&encoder_buffer_rear_left);
+    float rear_right_rps = encoder_buffer_compute_rps(&encoder_buffer_rear_right);
+    float rear_left_slip_ratio = (rear_left_rps / front_right_rps) - 1.0f;
+    float rear_right_slip_ratio = (rear_right_rps / front_right_rps) - 1.0f;
+
+    system_state.log_data.rear_left_slip_ratio = rear_left_slip_ratio;
+    system_state.log_data.rear_right_slip_ratio = rear_right_slip_ratio;
+
+    HAL_GPIO_WritePin(LED_TC_ENABLED_GPIO_Port, LED_TC_ENABLED_Pin, system_state.tc_enabled);
+    HAL_GPIO_WritePin(LED_LEFT_SLIP_DETECTED_GPIO_Port, LED_LEFT_SLIP_DETECTED_Pin, rear_left_slip_ratio > TARGET_SLIP_RATIO);
+    HAL_GPIO_WritePin(LED_RIGHT_SLIP_DETECTED_GPIO_Port, LED_RIGHT_SLIP_DETECTED_Pin, rear_right_slip_ratio > TARGET_SLIP_RATIO);
+
+    bool perform_tc = system_state.tc_enabled && front_right_rps > TRACTION_CONTROL_RPS_THRESHOLD;
+    bool cc_enabled = system_state.cc_rps > 0.0f && !is_full_throttle();
+
+    HAL_GPIO_WritePin(LED_TC_WORKING_GPIO_Port, LED_TC_WORKING_Pin, perform_tc);
+
+    float rear_left_pwm, rear_right_pwm;
+
+    if (perform_tc || cc_enabled) { // If TC is on and we have a recent valid measurement, or if cruse control is active.
+        if (cc_enabled) {
+            motor_pid_config.out_max = 1.0f; // Allow full power in cruise control mode.
+        } else {
+            motor_pid_config.out_max = system_state.throttle;
+        }
+
+        float target_tc_rps = front_right_rps * (1.0f + TARGET_SLIP_RATIO);
+        float target_rear_rps = (perform_tc && cc_enabled)
+            ? fminf(target_tc_rps, system_state.cc_rps)
+            : (perform_tc
+                      ? target_tc_rps
+                      : system_state.cc_rps);
+
+        system_state.log_data.rear_left_rps_ratio = rear_left_rps / target_rear_rps;
+        system_state.log_data.rear_right_rps_ratio = rear_right_rps / target_rear_rps;
+
+        rear_left_pwm = pid_update(&motor_pid_config, &rear_left_pid_state, target_rear_rps, rear_left_rps);
+        rear_right_pwm = pid_update(&motor_pid_config, &rear_right_pid_state, target_rear_rps, rear_right_rps);
+    } else {
+        rear_left_pwm = system_state.throttle;
+        rear_right_pwm = system_state.throttle;
+    }
+
+    set_motor_power(&motor_rear_left, rear_left_pwm);
+    set_motor_power(&motor_rear_right, rear_right_pwm);
+
+    system_state.log_data.rear_left_pwm = rear_left_pwm;
+    system_state.log_data.rear_right_pwm = rear_right_pwm;
+
+    debug_encoder(&encoder_buffer_rear_left, rear_left_rps);
+}
+
+void debug_mode_body()
+{
+    float rps = encoder_buffer_compute_rps(&encoder_buffer_rear_left);
+
+    // float pwm = pid_update(&motor_pid_config, &rear_left_pid_state, 250.0f / 60.0f, rps);
+    // set_motor_power(&motor_rear_left, pwm);
+
+    set_motor_power(&motor_rear_left, 1.0f);
+
+    static uint32_t last_print = 0;
+    if (xTaskGetTickCount() - last_print >= pdMS_TO_TICKS(250)) {
+        last_print = xTaskGetTickCount();
+        DeltaStats_t stats = encoder_buffer_compute_stats(&encoder_buffer_rear_left);
+
+        printf("rpm: %u\tewma: %u\tsma: %u\tstd: %u\tmax: %u\tmin: %u\n",
+            (uint32_t)(rps * 60.0f),
+            (uint32_t)(encoder_buffer_rear_left.delta_ewma),
+            (uint32_t)(stats.sma),
+            (uint32_t)(stats.std),
+            stats.max,
+            stats.min);
+        printf("[A]\tsma: %u\tstd: %u\tmax: %u\tmin: %u\n",
+            (uint32_t)(stats.sma_a),
+            (uint32_t)(stats.std_a),
+            stats.max_a,
+            stats.min_a);
+        printf("[B]\tsma: %u\tstd: %u\tmax: %u\tmin: %u\n",
+            (uint32_t)(stats.sma_b),
+            (uint32_t)(stats.std_b),
+            stats.max_b,
+            stats.min_b);
+        printf("\n");
+
+        // encoder_buffer_print_last_n_deltas(&encoder_buffer_rear_left, 128);
+    }
+}
+
 /*
  * Tasks
  */
@@ -352,57 +451,14 @@ void task_motor_driver(void* argument)
     for (;;) {
         xSemaphoreTake(motor_driver_sem, portMAX_DELAY);
 
-        float front_right_rps = encoder_buffer_compute_rps(&encoder_buffer_front_right);
-        float rear_left_rps = encoder_buffer_compute_rps(&encoder_buffer_rear_left);
-        float rear_right_rps = encoder_buffer_compute_rps(&encoder_buffer_rear_right);
-        float rear_left_slip_ratio = (rear_left_rps / front_right_rps) - 1.0f;
-        float rear_right_slip_ratio = (rear_right_rps / front_right_rps) - 1.0f;
-
-        system_state.log_data.rear_left_slip_ratio = rear_left_slip_ratio;
-        system_state.log_data.rear_right_slip_ratio = rear_right_slip_ratio;
-
-        HAL_GPIO_WritePin(LED_TC_ENABLED_GPIO_Port, LED_TC_ENABLED_Pin, system_state.tc_enabled);
-        HAL_GPIO_WritePin(LED_LEFT_SLIP_DETECTED_GPIO_Port, LED_LEFT_SLIP_DETECTED_Pin, rear_left_slip_ratio > TARGET_SLIP_RATIO);
-        HAL_GPIO_WritePin(LED_RIGHT_SLIP_DETECTED_GPIO_Port, LED_RIGHT_SLIP_DETECTED_Pin, rear_right_slip_ratio > TARGET_SLIP_RATIO);
-
-        bool perform_tc = system_state.tc_enabled && front_right_rps > TRACTION_CONTROL_RPS_THRESHOLD;
-        bool cc_enabled = system_state.cc_rps > 0.0f && !is_full_throttle();
-
-        HAL_GPIO_WritePin(LED_TC_WORKING_GPIO_Port, LED_TC_WORKING_Pin, perform_tc);
-
-        float rear_left_pwm, rear_right_pwm;
-
-        if (perform_tc || cc_enabled) { // If TC is on and we have a recent valid measurement, or if cruse control is active.
-            if (cc_enabled) {
-                motor_pid_config.out_max = 1.0f; // Allow full power in cruise control mode.
-            } else {
-                motor_pid_config.out_max = system_state.throttle;
-            }
-
-            float target_tc_rps = front_right_rps * (1.0f + TARGET_SLIP_RATIO);
-            float target_rear_rps = (perform_tc && cc_enabled)
-                ? fminf(target_tc_rps, system_state.cc_rps)
-                : (perform_tc
-                          ? target_tc_rps
-                          : system_state.cc_rps);
-
-            system_state.log_data.rear_left_rps_ratio = rear_left_rps / target_rear_rps;
-            system_state.log_data.rear_right_rps_ratio = rear_right_rps / target_rear_rps;
-
-            rear_left_pwm = pid_update(&motor_pid_config, &rear_left_pid_state, target_rear_rps, rear_left_rps);
-            rear_right_pwm = pid_update(&motor_pid_config, &rear_right_pid_state, target_rear_rps, rear_right_rps);
-        } else {
-            rear_left_pwm = system_state.throttle;
-            rear_right_pwm = system_state.throttle;
+        switch (system_state.mode) {
+        case MODE_NORMAL:
+            normal_mode_body();
+            break;
+        case MODE_DEBUG:
+            debug_mode_body();
+            break;
         }
-
-        set_motor_power(&motor_rear_left, rear_left_pwm);
-        set_motor_power(&motor_rear_right, rear_right_pwm);
-
-        system_state.log_data.rear_left_pwm = rear_left_pwm;
-        system_state.log_data.rear_right_pwm = rear_right_pwm;
-
-        debug_encoder(&encoder_buffer_rear_left, rear_left_rps);
     }
 }
 
