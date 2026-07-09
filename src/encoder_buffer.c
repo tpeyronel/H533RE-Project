@@ -93,9 +93,58 @@ float encoder_buffer_compute_rps(EncoderBuffer_t* buffer)
     return ((float)TIM_ENCODERS_FREQUENCY / (float)ENCODER_PPR) / delta_mean;
 }
 
+typedef struct {
+    uint64_t sum;
+    uint64_t sum_sq;
+    uint32_t min;
+    uint32_t max;
+} DeltaAccum_t;
+
+DeltaAccum_t accumulate_deltas(volatile uint32_t* deltas, uint32_t start_index, uint32_t count)
+{
+    DeltaAccum_t acc = { .sum = 0, .sum_sq = 0, .min = UINT32_MAX, .max = 0 };
+
+    uint32_t index = start_index;
+    for (uint32_t i = 0; i < count; i++) {
+        uint32_t delta = deltas[index];
+        acc.sum += delta;
+        acc.sum_sq += (uint64_t)delta * (uint64_t)delta;
+        acc.min = MIN(acc.min, delta);
+        acc.max = MAX(acc.max, delta);
+        index = (index + ENCODER_BUFFER_SIZE - 1) % ENCODER_BUFFER_SIZE;
+    }
+
+    return acc;
+}
+
+void fill_stats(DeltaAccum_t acc, uint32_t count, uint32_t* sma, uint32_t* std, uint32_t* min, uint32_t* max)
+{
+    double mean = (double)acc.sum / (double)count;
+    double variance = (double)acc.sum_sq / (double)count - mean * mean;
+
+    *sma = (uint32_t)mean;
+    *std = (uint32_t)sqrt(MAX(variance, 0.0f));
+    *min = acc.min;
+    *max = acc.max;
+}
+
 DeltaStats_t encoder_buffer_compute_stats(EncoderBuffer_t* buffer)
 {
     DeltaStats_t stats = { 0 };
+
+    DeltaAccum_t acc_a = accumulate_deltas(buffer->deltas_a, buffer->index_a, SAMPLE_COUNT);
+    DeltaAccum_t acc_b = accumulate_deltas(buffer->deltas_b, buffer->index_b, SAMPLE_COUNT);
+
+    fill_stats(acc_a, SAMPLE_COUNT, &stats.sma_a, &stats.std_a, &stats.min_a, &stats.max_a);
+    fill_stats(acc_b, SAMPLE_COUNT, &stats.sma_b, &stats.std_b, &stats.min_b, &stats.max_b);
+
+    DeltaAccum_t acc_combined = {
+        .sum = acc_a.sum + acc_b.sum,
+        .sum_sq = acc_a.sum_sq + acc_b.sum_sq,
+        .min = MIN(acc_a.min, acc_b.min),
+        .max = MAX(acc_a.max, acc_b.max),
+    };
+    fill_stats(acc_combined, 2 * SAMPLE_COUNT, &stats.sma, &stats.std, &stats.min, &stats.max);
 
     return stats;
 }
