@@ -44,7 +44,7 @@
 #define MOTOR_KD 0.00f
 #define MOTOR_DRIVER_UPDATE_INTERVAL 0.005f // 5 ms
 #define MOTOR_DRIVER_UPDATE_FREQUENCY 200.0f // 200 Hz
-#define MOTOR_MAX_PWM_VALUE 1000 // Assuming timer is configured for 1000 steps (0-100% duty cycle)
+#define MOTOR_MAX_PWM_VALUE 799 // Assuming timer is configured for 999 steps (0-100% duty cycle)
 
 #define TARGET_SLIP_RATIO 0.05f // Example target slip ratio (5%)
 
