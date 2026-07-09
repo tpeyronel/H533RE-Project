@@ -26,11 +26,13 @@
 #define LOGGING_TASK_STACK_SIZE (configMINIMAL_STACK_SIZE * 8)
 
 #define ENCODER_ACTIVE_CHANNEL_FRONT_RIGHT HAL_TIM_ACTIVE_CHANNEL_1
-#define ENCODER_ACTIVE_CHANNEL_REAR_LEFT HAL_TIM_ACTIVE_CHANNEL_2
+#define ENCODER_ACTIVE_CHANNEL_FRONT_LEFT HAL_TIM_ACTIVE_CHANNEL_2
 #define ENCODER_ACTIVE_CHANNEL_REAR_RIGHT HAL_TIM_ACTIVE_CHANNEL_3
+#define ENCODER_ACTIVE_CHANNEL_REAR_LEFT HAL_TIM_ACTIVE_CHANNEL_4
 #define ENCODER_CHANNEL_FRONT_RIGHT TIM_CHANNEL_1
-#define ENCODER_CHANNEL_REAR_LEFT TIM_CHANNEL_2
+#define ENCODER_CHANNEL_FRONT_LEFT TIM_CHANNEL_2
 #define ENCODER_CHANNEL_REAR_RIGHT TIM_CHANNEL_3
+#define ENCODER_CHANNEL_REAR_LEFT TIM_CHANNEL_4
 
 #define TIM_PWM htim3
 #define TIM_TRACTION_CONTROL htim7
@@ -95,8 +97,9 @@ typedef struct {
 } SystemState_t;
 
 EncoderBuffer_t encoder_buffer_front_right = { 0 };
-EncoderBuffer_t encoder_buffer_rear_left = { 0 };
+EncoderBuffer_t encoder_buffer_front_left = { 0 };
 EncoderBuffer_t encoder_buffer_rear_right = { 0 };
+EncoderBuffer_t encoder_buffer_rear_left = { 0 };
 
 PidControllerConfig_t motor_pid_config = {
     .Kp = MOTOR_KP,
@@ -469,13 +472,17 @@ void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef* htim)
             buffer = &encoder_buffer_front_right;
             timestamp = HAL_TIM_ReadCapturedValue(htim, ENCODER_CHANNEL_FRONT_RIGHT);
             break;
-        case ENCODER_ACTIVE_CHANNEL_REAR_LEFT:
-            buffer = &encoder_buffer_rear_left;
-            timestamp = HAL_TIM_ReadCapturedValue(htim, ENCODER_CHANNEL_REAR_LEFT);
+        case ENCODER_ACTIVE_CHANNEL_FRONT_LEFT:
+            buffer = &encoder_buffer_front_left;
+            timestamp = HAL_TIM_ReadCapturedValue(htim, ENCODER_CHANNEL_FRONT_LEFT);
             break;
         case ENCODER_ACTIVE_CHANNEL_REAR_RIGHT:
             buffer = &encoder_buffer_rear_right;
             timestamp = HAL_TIM_ReadCapturedValue(htim, ENCODER_CHANNEL_REAR_RIGHT);
+            break;
+        case ENCODER_ACTIVE_CHANNEL_REAR_LEFT:
+            buffer = &encoder_buffer_rear_left;
+            timestamp = HAL_TIM_ReadCapturedValue(htim, ENCODER_CHANNEL_REAR_LEFT);
             break;
         default:
             return; // Not an encoder channel we're tracking
@@ -488,8 +495,9 @@ void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef* htim)
 void mymain()
 {
     encoder_buffer_init(&encoder_buffer_front_right);
-    encoder_buffer_init(&encoder_buffer_rear_left);
+    encoder_buffer_init(&encoder_buffer_front_left);
     encoder_buffer_init(&encoder_buffer_rear_right);
+    encoder_buffer_init(&encoder_buffer_rear_left);
 
     message_queue = xQueueCreateStatic(MESSAGE_QUEUE_SIZE, sizeof(Message_t), (uint8_t*)(message_queues_storage_buffer), &message_queue_buffer);
     motor_driver_sem = xSemaphoreCreateBinaryStatic(&motor_driver_sem_buffer);
@@ -501,8 +509,9 @@ void mymain()
     HAL_TIM_PWM_Start(&TIM_PWM, motor_rear_left.enable_channel);
     HAL_TIM_PWM_Start(&TIM_PWM, motor_rear_right.enable_channel);
     HAL_TIM_IC_Start_IT(&TIM_ENCODERS, ENCODER_CHANNEL_FRONT_RIGHT);
-    HAL_TIM_IC_Start_IT(&TIM_ENCODERS, ENCODER_CHANNEL_REAR_LEFT);
+    HAL_TIM_IC_Start_IT(&TIM_ENCODERS, ENCODER_CHANNEL_FRONT_LEFT);
     HAL_TIM_IC_Start_IT(&TIM_ENCODERS, ENCODER_CHANNEL_REAR_RIGHT);
+    HAL_TIM_IC_Start_IT(&TIM_ENCODERS, ENCODER_CHANNEL_REAR_LEFT);
     HAL_TIM_Base_Start_IT(&TIM_TRACTION_CONTROL);
 
     HAL_UARTEx_ReceiveToIdle_IT(&huart5, (uint8_t*)(rx_buffer), RX_BUFFER_SIZE);
