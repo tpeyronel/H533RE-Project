@@ -17,6 +17,13 @@
 #define MAX_PULSE_AGE_MS 1000 // Maximum number of ms to consider a pulse valid (to filter out old pulses when the wheel is stationary)
 #define MAX_PULSE_AGE_TICKS (MAX_PULSE_AGE_MS * (TIM_ENCODERS_FREQUENCY / 1000))
 
+static float time_constant = FILTER_TIME_CONSTANT;
+
+void encoder_buffer_set_time_constant(float new_time_constant)
+{
+    time_constant = new_time_constant;
+}
+
 void encoder_buffer_init(EncoderBuffer_t* buffer)
 {
     buffer->current_edge = 0;

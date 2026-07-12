@@ -245,6 +245,33 @@ float pid_update(PidControllerConfig_t* pidc, PidControllerState_t* pids, float 
     return output;
 }
 
+void set_pid_constants(PidControllerConfig_t* pidc, float Kp, float Ki, float Kd)
+{
+    pidc->Kp = Kp;
+    pidc->Ki = Ki;
+    pidc->Kd = Kd;
+}
+
+void TIM_SetAllICFilters(TIM_TypeDef* TIMx, uint32_t filter)
+{
+    filter &= 0xF; // ICxF is 4 bits
+
+    // Disable all capture channels
+    uint32_t ccer = TIMx->CCER;
+    TIMx->CCER &= ~(TIM_CCER_CC1E | TIM_CCER_CC2E | TIM_CCER_CC3E | TIM_CCER_CC4E);
+
+    // Channels 1 & 2 (CCMR1)
+    TIMx->CCMR1 &= ~(TIM_CCMR1_IC1F | TIM_CCMR1_IC2F);
+    TIMx->CCMR1 |= (filter << TIM_CCMR1_IC1F_Pos) | (filter << TIM_CCMR1_IC2F_Pos);
+
+    // Channels 3 & 4 (CCMR2)
+    TIMx->CCMR2 &= ~(TIM_CCMR2_IC3F | TIM_CCMR2_IC4F);
+    TIMx->CCMR2 |= (filter << TIM_CCMR2_IC3F_Pos) | (filter << TIM_CCMR2_IC4F_Pos);
+
+    // Restore channel enable state
+    TIMx->CCER = ccer;
+}
+
 void process_message(Message_t* msg)
 {
     switch (msg->type) {
@@ -275,24 +302,11 @@ void process_message(Message_t* msg)
         printf("RX: Decrease CC speed\n");
         system_state.cc_rps = fmaxf(0.0f, system_state.cc_rps - CRUISE_CONTROL_RPS_STEP);
         break;
-    case MSG_TYPE_SET_MOTOR_PID_CONFIG:
-        printf("RX: Updated motor PID config for motor %u\n", msg->set_motor_pid_config.motor_id);
-
-        PidControllerConfig_t* pid_config;
-
-        switch (msg->set_motor_pid_config.motor_id) {
-        case 0:
-        case 1:
-            pid_config = &motor_pid_config; // Assuming we have only one PID config for both motors for simplicity. Extend as needed.
-            break;
-        default:
-            printf("RX: Invalid motor ID in PID config message: %u\n", msg->set_motor_pid_config.motor_id);
-            return;
-        }
-
-        pid_config->Kp = msg->set_motor_pid_config.Kp;
-        pid_config->Ki = msg->set_motor_pid_config.Ki;
-        pid_config->Kd = msg->set_motor_pid_config.Kd;
+    case MSG_TYPE_SET_CONSTANTS:
+        printf("RX: Updated constants\n");
+        set_pid_constants(&motor_pid_config, msg->set_constants.Kp, msg->set_constants.Ki, msg->set_constants.Kd);
+        encoder_buffer_set_time_constant(msg->set_constants.time_constant);
+        TIM_SetAllICFilters(TIM2, (uint32_t)msg->set_constants.input_filter);
         break;
     default:
         printf("RX: Unknown message type: %u\n", msg->type);

@@ -36,6 +36,7 @@ typedef struct {
     uint32_t max_b;
 } DeltaStats_t;
 
+void encoder_buffer_set_time_constant(float time_constant);
 void encoder_buffer_init(EncoderBuffer_t* buffer);
 void encoder_buffer_handle_pulse(EncoderBuffer_t* buffer, uint32_t timestamp);
 float encoder_buffer_compute_rps(EncoderBuffer_t* buffer);
