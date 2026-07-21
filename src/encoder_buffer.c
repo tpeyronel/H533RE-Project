@@ -16,6 +16,8 @@
 #define SAMPLE_COUNT (ENCODER_BUFFER_SIZE / 2) // Number of samples to average for mean calculation, should be <= ENCODER_BUFFER_SIZE
 #define MAX_PULSE_AGE_MS 1000 // Maximum number of ms to consider a pulse valid (to filter out old pulses when the wheel is stationary)
 #define MAX_PULSE_AGE_TICKS (MAX_PULSE_AGE_MS * (TIM_ENCODERS_FREQUENCY / 1000))
+#define MAX_RPM 500
+#define MIN_DELTA_TICKS (TIM_ENCODERS_FREQUENCY / MAX_RPM) * (60 / ENCODER_PPR) // Minimum delta in timer ticks to consider a pulse valid (to filter out noise)
 
 static float time_constant = FILTER_TIME_CONSTANT;
 
@@ -59,6 +61,12 @@ void encoder_buffer_handle_pulse(EncoderBuffer_t* buffer, uint32_t timestamp)
         : &buffer->last_b_edge_timestamp;
 
     uint32_t delta = timestamp - *previous_timestamp;
+
+    if (delta < MIN_DELTA_TICKS) {
+        // Ignore this pulse as it is too close to the previous one (likely noise)
+        return;
+    }
+
     *previous_timestamp = timestamp;
 
     buffer->delta_ewma = update_delta_mean(buffer->delta_ewma, delta);
