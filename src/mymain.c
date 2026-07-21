@@ -127,14 +127,14 @@ PidControllerState_t rear_right_pid_state = {
     .prev_measurement = 0.0f,
 };
 
-const Motor_t rear_left_motor = {
+const Motor_t rear_right_motor = {
     .enable_channel = TIM_CHANNEL_1,
     .enable = { MOTOR_A_ENB_GPIO_Port, MOTOR_A_ENB_Pin },
     .control1 = { MOTOR_A_IN1_GPIO_Port, MOTOR_A_IN1_Pin },
     .control2 = { MOTOR_A_IN2_GPIO_Port, MOTOR_A_IN2_Pin },
 };
 
-const Motor_t rear_right_motor = {
+const Motor_t rear_left_motor = {
     .enable_channel = TIM_CHANNEL_2,
     .enable = { MOTOR_B_ENB_GPIO_Port, MOTOR_B_ENB_Pin },
     .control1 = { MOTOR_B_IN1_GPIO_Port, MOTOR_B_IN1_Pin },
