@@ -333,7 +333,7 @@ void normal_mode_body()
     system_state.log_data.rear_left_rpm = fclampf(rear_left_rps * 60.0f, 0.0f, 255.0f);
     system_state.log_data.rear_right_rpm = fclampf(rear_right_rps * 60.0f, 0.0f, 255.0f);
 
-    float real_rps = fmaxf(rear_left_rps, rear_right_rps);
+    float real_rps = fmaxf(front_left_rps, front_right_rps);
 
     float rear_left_slip_ratio = (rear_left_rps / real_rps) - 1.0f;
     float rear_right_slip_ratio = (rear_right_rps / real_rps) - 1.0f;
