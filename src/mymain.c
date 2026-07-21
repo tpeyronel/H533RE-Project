@@ -46,6 +46,7 @@
 #define MOTOR_DRIVER_UPDATE_INTERVAL 0.005f // 5 ms
 #define MOTOR_DRIVER_UPDATE_FREQUENCY 200.0f // 200 Hz
 #define MOTOR_MAX_PWM_VALUE 799 // Assuming timer is configured for 999 steps (0-100% duty cycle)
+#define MOTOR_PWM_LIMITER_COEFFICIENT 0.8f
 
 #define TARGET_SLIP_RATIO 0.05f // Example target slip ratio (5%)
 
@@ -207,7 +208,7 @@ void set_motor_power(const Motor_t* motor, float pwm /* 0.0 to 1.0*/)
 {
     pwm = fclampf(pwm, 0.0f, 1.0f);
 
-    uint32_t compare = (uint32_t)(pwm * MOTOR_MAX_PWM_VALUE);
+    uint32_t compare = (uint32_t)(pwm * MOTOR_PWM_LIMITER_COEFFICIENT * MOTOR_MAX_PWM_VALUE);
     __HAL_TIM_SET_COMPARE(&TIM_PWM, motor->enable_channel, compare);
 }
 
