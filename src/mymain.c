@@ -382,8 +382,8 @@ void normal_mode_body()
     set_motor_power(&rear_left_motor, rear_left_pwm);
     set_motor_power(&rear_right_motor, rear_right_pwm);
 
-    system_state.log_data.rear_left_pwm = rear_left_pwm * 255.0f;
-    system_state.log_data.rear_right_pwm = rear_right_pwm * 255.0f;
+    system_state.log_data.rear_left_pwm = fclampf(rear_left_pwm, 0.0f, 1.0f) * 255.0f;
+    system_state.log_data.rear_right_pwm = fclampf(rear_right_pwm, 0.0f, 1.0f) * 255.0f;
 }
 
 void debug_mode_body()
