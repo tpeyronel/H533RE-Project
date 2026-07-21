@@ -327,7 +327,7 @@ void normal_mode_body()
     float rear_left_rps = encoder_buffer_compute_rps(&encoder_buffer_rear_left);
     float rear_right_rps = encoder_buffer_compute_rps(&encoder_buffer_rear_right);
 
-    system_state.log_data.throttle = system_state.throttle;
+    system_state.log_data.throttle = system_state.throttle * 255.0f;
     system_state.log_data.front_right_rpm = fclampf(front_right_rps * 60.0f, 0.0f, 255.0f);
     system_state.log_data.front_left_rpm = fclampf(front_left_rps * 60.0f, 0.0f, 255.0f);
     system_state.log_data.rear_left_rpm = fclampf(rear_left_rps * 60.0f, 0.0f, 255.0f);
@@ -382,8 +382,8 @@ void normal_mode_body()
     set_motor_power(&rear_left_motor, rear_left_pwm);
     set_motor_power(&rear_right_motor, rear_right_pwm);
 
-    system_state.log_data.rear_left_pwm = rear_left_pwm;
-    system_state.log_data.rear_right_pwm = rear_right_pwm;
+    system_state.log_data.rear_left_pwm = rear_left_pwm * 255.0f;
+    system_state.log_data.rear_right_pwm = rear_right_pwm * 255.0f;
 }
 
 void debug_mode_body()
