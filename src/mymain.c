@@ -97,6 +97,7 @@ typedef struct {
 typedef struct {
     SystemMode_t mode;
     float throttle;
+    MotorDirection_t direction;
     bool tc_enabled;
     float cc_rps; // Cruise control target speed in RPS, 0 if cruise control is off
     struct MessageOutLogPayload log_data;
@@ -145,6 +146,7 @@ const Motor_t rear_left_motor = {
 volatile SystemState_t system_state = {
     .mode = MODE_NORMAL,
     .throttle = 0.0f,
+    .direction = MOTOR_DIRECTION_FORWARDS,
     .tc_enabled = true,
     .cc_rps = 0.0f,
     .log_data = { 0 },
@@ -279,6 +281,7 @@ void process_message(Message_t* msg)
     case MSG_TYPE_SET_THROTTLE:
         printf("RX: Set throttle to %u\n", msg->set_throttle.throttle);
         system_state.throttle = (float)(msg->set_throttle.throttle) / 255.0f;
+        system_state.direction = msg->set_throttle.is_forwards ? MOTOR_DIRECTION_FORWARDS : MOTOR_DIRECTION_BACKWARDS;
         break;
     case MSG_TYPE_TOGGLE_TC:
         printf("RX: Toggle TC\n");
@@ -379,6 +382,8 @@ void normal_mode_body()
         rear_right_pwm = system_state.throttle;
     }
 
+    set_motor_direction(&rear_left_motor, system_state.direction);
+    set_motor_direction(&rear_right_motor, system_state.direction);
     set_motor_power(&rear_left_motor, rear_left_pwm);
     set_motor_power(&rear_right_motor, rear_right_pwm);
 

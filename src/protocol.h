@@ -14,6 +14,7 @@ enum MessageType : uint8_t {
 struct MessageSetThrottle {
     enum MessageType type;
     uint8_t throttle;
+    uint8_t is_forwards;
 } __attribute__((packed));
 
 struct MessageToggleTc {
