@@ -153,6 +153,8 @@ DeltaStats_t encoder_buffer_compute_stats(EncoderBuffer_t* buffer)
     };
     fill_stats(acc_combined, 2 * SAMPLE_COUNT, &stats.sma, &stats.std, &stats.min, &stats.max);
 
+    stats.alpha = 1 - expf(-(float)(buffer->delta_ewma) * time_constant);
+
     return stats;
 }
 

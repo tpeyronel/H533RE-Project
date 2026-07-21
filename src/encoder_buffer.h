@@ -22,6 +22,7 @@ typedef struct {
 } EncoderBuffer_t;
 
 typedef struct {
+    float alpha;
     uint32_t sma;
     uint32_t std;
     uint32_t min;
