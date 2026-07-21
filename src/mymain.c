@@ -388,37 +388,42 @@ void normal_mode_body()
 
 void debug_mode_body()
 {
-    EncoderBuffer_t* buffer = &encoder_buffer_rear_left;
-    PidControllerState_t* pid_state = &rear_left_pid_state;
-    const Motor_t* motor = &rear_left_motor;
+    EncoderBuffer_t* buffer = &encoder_buffer_rear_right;
+    PidControllerState_t* pid_state = &rear_right_pid_state;
+    const Motor_t* motor = &rear_right_motor;
+    uint8_t* log_pwm = &system_state.log_data.rear_right_pwm;
+    uint8_t* log_rpm = &system_state.log_data.rear_right_rpm;
 
     float rps = encoder_buffer_compute_rps(buffer);
 
-    // float pwm = pid_update(&motor_pid_config, &pid_state, 250.0f / 60.0f, rps);
-    float pwm = 1.0;
+    float pwm = pid_update(&motor_pid_config, pid_state, 250.0f / 60.0f, rps);
+    // float pwm = 0.75;
+    // float pwm = system_state.throttle;
 
     set_motor_power(motor, pwm);
 
-    system_state.log_data.rear_left_pwm = pwm;
+    *log_pwm = pwm * 255.0f;
+    *log_rpm = (uint8_t)(fclampf(rps * 60.0f, 0.0f, 255.0f));
 
     static uint32_t last_print = 0;
     if (xTaskGetTickCount() - last_print >= pdMS_TO_TICKS(250)) {
         last_print = xTaskGetTickCount();
         DeltaStats_t stats = encoder_buffer_compute_stats(buffer);
 
-        printf("rpm: %lu\tewma: %lu\tsma: %lu\tstd: %lu\tmax: %lu\tmin: %lu\n",
+        printf("rpm: %lu\tewma: %lu\tsma: %lu\tstd: %lu\tmax: %lu\tmin: %lu\talpha: %lu\n",
             (uint32_t)(rps * 60.0f),
             (uint32_t)(buffer->delta_ewma),
             (uint32_t)(stats.sma),
             (uint32_t)(stats.std),
             stats.max,
-            stats.min);
-        printf("[A]\tsma: %lu\tstd: %lu\tmax: %lu\tmin: %lu\n",
+            stats.min,
+            (uint32_t)(stats.alpha * 100.0f));
+        printf("[A]\t\tsma: %lu\tstd: %lu\tmax: %lu\tmin: %lu\n",
             (uint32_t)(stats.sma_a),
             (uint32_t)(stats.std_a),
             stats.max_a,
             stats.min_a);
-        printf("[B]\tsma: %lu\tstd: %lu\tmax: %lu\tmin: %lu\n",
+        printf("[B]\t\tsma: %lu\tstd: %lu\tmax: %lu\tmin: %lu\n",
             (uint32_t)(stats.sma_b),
             (uint32_t)(stats.std_b),
             stats.max_b,
