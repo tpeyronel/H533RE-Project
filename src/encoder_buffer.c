@@ -11,15 +11,13 @@
 #define TIM_ENCODERS_FREQUENCY 16000000 // 16 MHz timer clock frequency
 #define ENCODER_PPR (20 * 1)
 
-#define FILTER_TIME_CONSTANT (1.0f / (0.1f * TIM_ENCODERS_FREQUENCY)) // Time constant for low-pass filter in encoder timer ticks
-
 #define SAMPLE_COUNT (ENCODER_BUFFER_SIZE / 2) // Number of samples to average for mean calculation, should be <= ENCODER_BUFFER_SIZE
 #define MAX_PULSE_AGE_MS 1000 // Maximum number of ms to consider a pulse valid (to filter out old pulses when the wheel is stationary)
 #define MAX_PULSE_AGE_TICKS (MAX_PULSE_AGE_MS * (TIM_ENCODERS_FREQUENCY / 1000))
 #define MAX_RPM 500
 #define MIN_DELTA_TICKS (TIM_ENCODERS_FREQUENCY / MAX_RPM) * (60 / ENCODER_PPR) // Minimum delta in timer ticks to consider a pulse valid (to filter out noise)
 
-static float time_constant = FILTER_TIME_CONSTANT;
+static float time_constant = 0.00001f; // default time constant for EWMA.
 
 void encoder_buffer_set_time_constant(float new_time_constant)
 {
@@ -45,8 +43,8 @@ void encoder_buffer_init(EncoderBuffer_t* buffer)
 
 float update_delta_mean(float delta_mean, uint32_t new_delta)
 {
-    // float alpha = 1 - expf(-(float)(fmaxf(delta, buffer->delta_ewma)) * FILTER_TIME_CONSTANT);
-    float alpha = 0.75f; // Weight for the new delta
+    float alpha = 1 - expf(-(float)(fmaxf(new_delta, delta_mean)) * time_constant);
+    // float alpha = 0.75f; // Weight for the new delta
 
     return alpha * (float)(new_delta) + (1 - alpha) * delta_mean;
 }
