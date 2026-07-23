@@ -113,7 +113,7 @@ PidControllerConfig_t motor_pid_config = {
     .Ki = MOTOR_KI,
     .Kd = MOTOR_KD,
     .out_min = 0.0f,
-    .out_max = 1.0f,
+    .out_max = 0.0f,
     .T = MOTOR_DRIVER_UPDATE_INTERVAL,
 };
 
@@ -212,6 +212,11 @@ void set_motor_power(const Motor_t* motor, float pwm /* 0.0 to 1.0*/)
 
     uint32_t compare = (uint32_t)(pwm * MOTOR_PWM_LIMITER_COEFFICIENT * MOTOR_MAX_PWM_VALUE);
     __HAL_TIM_SET_COMPARE(&TIM_PWM, motor->enable_channel, compare);
+}
+
+float feedforward(float rps)
+{
+    return 0.00132253 * rps + 0.614111;
 }
 
 float pid_update(PidControllerConfig_t* pidc, PidControllerState_t* pids, float setpoint, float measurement)
@@ -355,32 +360,26 @@ void normal_mode_body()
 
     float rear_left_pwm, rear_right_pwm;
 
-    if (perform_tc || cc_enabled) { // If TC is on and we have a recent valid measurement, or if cruse control is active.
-        if (cc_enabled) {
-            motor_pid_config.out_max = 1.0f; // Allow full power in cruise control mode.
-        } else {
-            motor_pid_config.out_max = system_state.throttle;
-        }
+    motor_pid_config.out_max = cc_enabled ? 1.0f - system_state.throttle : 0.0f;
+    motor_pid_config.out_min = perform_tc ? -system_state.throttle : 0.0f;
 
-        float target_tc_rps = real_rps * (1.0f + TARGET_SLIP_RATIO);
-        float target_rear_rps = (perform_tc && cc_enabled)
-            ? fminf(target_tc_rps, system_state.cc_rps)
-            : (perform_tc
-                      ? target_tc_rps
-                      : system_state.cc_rps);
+    float target_rear_rps;
 
-        system_state.log_data.rear_left_target_rpm = fclampf(target_rear_rps * 60.0f, 0.0f, 255.0f);
-        system_state.log_data.rear_right_target_rpm = fclampf(target_rear_rps * 60.0f, 0.0f, 255.0f);
-
-        rear_left_pwm = pid_update(&motor_pid_config, &rear_left_pid_state, target_rear_rps, rear_left_rps);
-        rear_right_pwm = pid_update(&motor_pid_config, &rear_right_pid_state, target_rear_rps, rear_right_rps);
+    if (perform_tc && cc_enabled) {
+        target_rear_rps = fminf(real_rps * (1.0f + TARGET_SLIP_RATIO), system_state.cc_rps);
+    } else if (perform_tc) {
+        target_rear_rps = real_rps * (1.0f + TARGET_SLIP_RATIO);
+    } else if (cc_enabled) {
+        target_rear_rps = system_state.cc_rps;
     } else {
-        system_state.log_data.rear_left_target_rpm = 0;
-        system_state.log_data.rear_right_target_rpm = 0;
-
-        rear_left_pwm = system_state.throttle;
-        rear_right_pwm = system_state.throttle;
+        target_rear_rps = 0.0f; // Doesn't matter, out_min = out_max = 0
     }
+
+    system_state.log_data.rear_left_target_rpm = fclampf(target_rear_rps * 60.0f, 0.0f, 255.0f);
+    system_state.log_data.rear_right_target_rpm = fclampf(target_rear_rps * 60.0f, 0.0f, 255.0f);
+
+    rear_left_pwm = system_state.throttle + pid_update(&motor_pid_config, &rear_left_pid_state, target_rear_rps, rear_left_rps);
+    rear_right_pwm = system_state.throttle + pid_update(&motor_pid_config, &rear_right_pid_state, target_rear_rps, rear_right_rps);
 
     set_motor_direction(&rear_left_motor, system_state.direction);
     set_motor_direction(&rear_right_motor, system_state.direction);
