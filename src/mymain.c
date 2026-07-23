@@ -396,13 +396,13 @@ void debug_mode_body()
     EncoderBuffer_t* buffer = &encoder_buffer_rear_right;
     PidControllerState_t* pid_state = &rear_right_pid_state;
     const Motor_t* motor = &rear_right_motor;
-    uint8_t* log_pwm = &system_state.log_data.rear_right_pwm;
-    uint8_t* log_rpm = &system_state.log_data.rear_right_rpm;
+    volatile uint8_t* log_pwm = &system_state.log_data.rear_right_pwm;
+    volatile uint8_t* log_rpm = &system_state.log_data.rear_right_rpm;
 
     float rps = encoder_buffer_compute_rps(buffer);
 
-    float pwm = pid_update(&motor_pid_config, pid_state, 250.0f / 60.0f, rps);
-    // float pwm = 0.75;
+    // float pwm = feedforward(rps) + pid_update(&motor_pid_config, pid_state, 250.0f / 60.0f, rps);
+    float pwm = 1.0;
     // float pwm = system_state.throttle;
 
     set_motor_power(motor, pwm);
