@@ -214,6 +214,7 @@ void set_motor_power(const Motor_t* motor, float pwm /* 0.0 to 1.0*/)
     __HAL_TIM_SET_COMPARE(&TIM_PWM, motor->enable_channel, compare);
 }
 
+// Approximate PWM needed for a given RPS using linear regression on collected data
 float feedforward(float rps)
 {
     return 0.00132253 * rps + 0.614111;
