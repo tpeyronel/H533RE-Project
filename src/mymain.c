@@ -361,8 +361,10 @@ void normal_mode_body()
 
     float rear_left_pwm, rear_right_pwm;
 
-    motor_pid_config.out_max = cc_enabled ? 1.0f - system_state.throttle : 0.0f;
-    motor_pid_config.out_min = perform_tc ? -system_state.throttle : 0.0f;
+    float throttle = !cc_enabled ? system_state.throttle : feedforward(system_state.cc_rps);
+
+    motor_pid_config.out_max = cc_enabled ? 1.0f - throttle : 0.0f;
+    motor_pid_config.out_min = perform_tc ? -throttle : 0.0f;
 
     float target_rear_rps;
 
@@ -379,8 +381,8 @@ void normal_mode_body()
     system_state.log_data.rear_left_target_rpm = fclampf(target_rear_rps * 60.0f, 0.0f, 255.0f);
     system_state.log_data.rear_right_target_rpm = fclampf(target_rear_rps * 60.0f, 0.0f, 255.0f);
 
-    rear_left_pwm = system_state.throttle + pid_update(&motor_pid_config, &rear_left_pid_state, target_rear_rps, rear_left_rps);
-    rear_right_pwm = system_state.throttle + pid_update(&motor_pid_config, &rear_right_pid_state, target_rear_rps, rear_right_rps);
+    rear_left_pwm = throttle + pid_update(&motor_pid_config, &rear_left_pid_state, target_rear_rps, rear_left_rps);
+    rear_right_pwm = throttle + pid_update(&motor_pid_config, &rear_right_pid_state, target_rear_rps, rear_right_rps);
 
     set_motor_direction(&rear_left_motor, system_state.direction);
     set_motor_direction(&rear_right_motor, system_state.direction);
