@@ -145,6 +145,7 @@ const Motor_t rear_left_motor = {
 
 volatile SystemState_t system_state = {
     .mode = MODE_NORMAL,
+    // .mode = MODE_DEBUG,
     .throttle = 0.0f,
     .direction = MOTOR_DIRECTION_FORWARDS,
     .tc_enabled = true,
