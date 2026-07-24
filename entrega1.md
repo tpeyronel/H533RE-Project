@@ -49,6 +49,8 @@ La detección del deslizamiento de las ruedas (y el ajuste de potencia de los mo
 
 ## Arquitectura de Software y diseño en FreeRTOS
 
+![diagrama de tareas](./diagramatareas.png)
+
 ### Tareas (en orden de prioridad, mayor a menor):
 - Tarea de control de motores: se encarga de detectar el deslizamiento, y de implementar el control PID para la potencia del motor. También tiene en cuenta el control de velocidad en caso de que este se encuentra activado.
 - Tarea de recepción de comandos: se encargar de recibir comandos de control de la PC mediante bluetooth, y procesarlos.
